@@ -1,0 +1,9 @@
+.venv/
+.localdata/
+__pycache__/
+*.pyc
+.env
+data/
+
+# Compose d'origine : contient les secrets de production en clair.
+docker-compose.txt

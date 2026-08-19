@@ -1,0 +1,46 @@
+{% set data = job.summary_data %}
+{% if data %}
+<div class="card">
+  <h2>Recapitulatif</h2>
+  <p class="muted">
+    {{ data.created }} compte(s) cree(s) sur {{ data.total }}.
+    {% if data.site and data.site.webUrl %}
+      Site : <a href="{{ data.site.webUrl }}" target="_blank" rel="noopener">{{ data.site.webUrl }}</a>.
+    {% endif %}
+  </p>
+
+  <table class="table compact">
+    <thead>
+      <tr><th>Utilisateur</th><th>Compte</th><th>Licences</th><th>OneDrive</th><th>Raccourci</th><th>Coffre</th></tr>
+    </thead>
+    <tbody>
+    {% for u in data.users %}
+      <tr class="{{ 'row-error' if u.errors else '' }}">
+        <td>
+          <span class="strong">{{ u.display_name }}</span>
+          <div class="muted mono small">{{ u.upn }}</div>
+          {% if u.password %}
+            <div class="pwd">
+              Mot de passe a mettre au coffre manuellement :
+              <code>{{ u.password }}</code>
+            </div>
+          {% endif %}
+        </td>
+        <td>{% if u.created %}<span class="pill pill-ok">cree</span>
+            {% elif u.existing %}<span class="pill pill-warn">existant</span>
+            {% else %}<span class="pill pill-ko">echec</span>{% endif %}</td>
+        <td class="small">{{ u.license_names | join(', ') if u.license_names else '—' }}</td>
+        <td class="small">{{ u.onedrive }}</td>
+        <td class="small">{{ u.shortcut }}</td>
+        <td class="small">{{ u.vault }}</td>
+      </tr>
+      {% if u.errors %}
+      <tr class="row-error-detail">
+        <td colspan="6" class="small">⚠ {{ u.errors | join(' · ') }}</td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

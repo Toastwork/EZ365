@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ez365-local",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["run_local.py"],
+      "port": 8000
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Traitement — {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Provisionnement</h1>
+    <p class="muted small">
+      {% if tenant %}<a href="/tenants/{{ tenant.id }}">{{ tenant.display_name or tenant.id }}</a> · {% endif %}
+      lance le {{ job.created_at | dt }} par {{ job.created_by }}
+    </p>
+  </div>
+  <div class="head-actions">
+    <span id="job-status" class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(job.status,'warn') }}">{{ job.status }}</span>
+    {% if running %}
+    <form method="post" action="/jobs/{{ job.id }}/cancel">
+      <button class="btn btn-danger" type="submit">Interrompre</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Journal</h2>
+  <ol class="log" id="log" data-job="{{ job.id }}" data-running="{{ 1 if running else 0 }}">
+    {% for e in events %}
+      <li class="log-{{ e.level }}" data-id="{{ e.id }}">
+        <span class="log-time">{{ e.ts | dt }}</span>
+        <span class="log-step">{{ e.step }}</span>
+        <span class="log-msg">{{ e.message }}</span>
+      </li>
+    {% endfor %}
+  </ol>
+  <p id="log-waiting" class="muted {{ '' if running else 'hidden' }}">Traitement en cours…</p>
+</div>
+
+<div id="summary">
+  {% include "partials/summary.html" %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/job.js"></script>
+{% endblock %}

@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}{{ tenant.display_name or tenant.id }} — {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>{{ tenant.display_name or tenant.id }}</h1>
+    <p class="muted mono small">{{ tenant.id }} · {{ tenant.default_domain or 'domaine inconnu' }}</p>
+  </div>
+  <div class="head-actions">
+    <form method="post" action="/tenants/{{ tenant.id }}/refresh">
+      <button class="btn" type="submit">Verifier la connexion</button>
+    </form>
+    <form method="post" action="/tenants/{{ tenant.id }}/forget"
+          onsubmit="return confirm('Retirer ce tenant d\'EZ365 ? Le consentement Microsoft reste actif.');">
+      <button class="btn btn-danger" type="submit">Retirer</button>
+    </form>
+  </div>
+</div>
+
+{% if graph_error %}
+<div class="flash flash-error">
+  Lecture du tenant impossible : {{ graph_error }}
+</div>
+{% endif %}
+
+<!-- ------------------------------------------------------------------ -->
+<details class="card" {% if not tenant.vault_collection_id %}open{% endif %}>
+  <summary><strong>Destination Bitwarden</strong>
+    <span class="muted small">— ou deposer les identifiants crees pour ce client</span>
+  </summary>
+  {% if vault_ready %}
+  <form method="post" action="/tenants/{{ tenant.id }}/vault" class="grid-2 mt">
+    <div>
+      <label for="vault_org_id">Organisation</label>
+      <select id="vault_org_id" name="vault_org_id" onchange="reloadCollections(this.value)">
+        <option value="">— Coffre personnel du compte de service —</option>
+        {% for o in vault_orgs %}
+          <option value="{{ o.id }}" {% if o.id == tenant.vault_org_id %}selected{% endif %}>{{ o.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="vault_collection_id">Collection</label>
+      <select id="vault_collection_id" name="vault_collection_id">
+        <option value="">— Aucune —</option>
+        {% for c in vault_collections %}
+          <option value="{{ c.id }}" {% if c.id == tenant.vault_collection_id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="span-2">
+      <button class="btn btn-primary" type="submit">Enregistrer</button>
+    </div>
+  </form>
+  {% else %}
+  <p class="flash flash-error mt">{{ vault_message }}</p>
+  {% endif %}
+</details>
+
+<!-- ------------------------------------------------------------------ -->
+<form method="post" action="/tenants/{{ tenant.id }}/provision" class="card provision"
+      onsubmit="return confirmProvision(this);">
+  <h2>Provisionner</h2>
+
+  <!-- ============ SharePoint ============ -->
+  <section>
+    <h3>1 · Site SharePoint</h3>
+    <div class="radios">
+      <label><input type="radio" name="site_mode" value="team" checked onchange="siteMode(this.value)"> Nouveau site d'equipe <span class="muted small">(groupe Microsoft 365)</span></label>
+      <label><input type="radio" name="site_mode" value="communication" onchange="siteMode(this.value)"> Nouveau site de communication</label>
+      <label><input type="radio" name="site_mode" value="existing" onchange="siteMode(this.value)"> Site existant</label>
+      <label><input type="radio" name="site_mode" value="none" onchange="siteMode(this.value)"> Aucun site</label>
+    </div>
+
+    <div id="site-new" class="grid-2 mt">
+      <div>
+        <label for="site_display_name">Nom du site</label>
+        <input id="site_display_name" name="site_display_name" placeholder="Documents {{ tenant.display_name }}"
+               oninput="suggestPath(this.value)">
+      </div>
+      <div>
+        <label for="site_path">Adresse <span class="muted small">/sites/…</span></label>
+        <input id="site_path" name="site_path" placeholder="documents-client">
+      </div>
+      <div class="span-2">
+        <label for="site_description">Description</label>
+        <input id="site_description" name="site_description" placeholder="Espace documentaire du client">
+      </div>
+      <div id="site-owner-row" class="hidden">
+        <label for="site_owner_upn">Proprietaire du site <span class="muted small">(UPN existant, requis)</span></label>
+        <input id="site_owner_upn" name="site_owner_upn" placeholder="admin@{{ tenant.default_domain }}">
+      </div>
+      <div id="site-public-row">
+        <label class="check"><input type="checkbox" name="site_public"> Site public (visible de tout le tenant)</label>
+      </div>
+    </div>
+
+    <div id="site-existing" class="hidden mt">
+      <label for="existing_site_id">Site existant</label>
+      <select id="existing_site_id" name="existing_site_id">
+        <option value="">— Choisir —</option>
+        {% for s in sites %}
+          <option value="{{ s.id }}">{{ s.displayName or s.name }} — {{ s.webUrl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </section>
+
+  <!-- ============ Utilisateurs ============ -->
+  <section>
+    <h3>2 · Utilisateurs</h3>
+    <div class="grid-3">
+      <div>
+        <label for="user_domain">Domaine des comptes</label>
+        <input id="user_domain" name="user_domain" value="{{ tenant.default_domain }}" required>
+      </div>
+      <div>
+        <label for="usage_location">Pays (usageLocation)</label>
+        <input id="usage_location" name="usage_location" value="FR" maxlength="2" required>
+      </div>
+      <div>
+        <label class="check mt-label">
+          <input type="checkbox" name="force_change" checked>
+          Changement du mot de passe a la 1re connexion
+        </label>
+      </div>
+    </div>
+
+    <table class="table compact mt" id="users-table">
+      <thead>
+        <tr><th>Prenom</th><th>Nom</th><th>Alias <span class="muted small">(avant @)</span></th><th>Fonction</th><th>Service</th><th></th></tr>
+      </thead>
+      <tbody id="users-body">
+        <tr>
+          <td><input name="first_name" oninput="suggestAlias(this)"></td>
+          <td><input name="last_name" oninput="suggestAlias(this)"></td>
+          <td><input name="alias" placeholder="prenom.nom"></td>
+          <td><input name="job_title"></td>
+          <td><input name="department"></td>
+          <td><button type="button" class="btn btn-small" onclick="removeRow(this)">×</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <button type="button" class="btn btn-small" onclick="addRow()">+ Ajouter une ligne</button>
+
+    <details class="mt">
+      <summary class="muted">Coller une liste (Excel, CSV)</summary>
+      <p class="muted small mt">Une ligne par personne : <code>Prenom;Nom;alias;Fonction;Service</code>. Tabulations et virgules acceptees.</p>
+      <textarea name="bulk_users" rows="5" placeholder="Marie;Dupont;marie.dupont;Comptable;Finance"></textarea>
+    </details>
+  </section>
+
+  <!-- ============ Licences ============ -->
+  <section>
+    <h3>3 · Licences</h3>
+    {% if skus %}
+    <div class="sku-grid">
+      {% for s in skus %}
+        <label class="sku {{ 'sku-empty' if s.available == 0 else '' }}">
+          <input type="checkbox" name="sku_id" value="{{ s.skuId }}|{{ s.skuPartNumber }}">
+          <span class="sku-name">{{ s.skuPartNumber }}</span>
+          <span class="sku-count">{{ s.available }} dispo. / {{ s.enabled }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    {% else %}
+      <p class="muted">Aucune licence lisible sur ce tenant.</p>
+    {% endif %}
+  </section>
+
+  <!-- ============ OneDrive & raccourcis ============ -->
+  <section>
+    <h3>4 · OneDrive et raccourcis</h3>
+    <label class="check"><input type="checkbox" name="provision_onedrive" checked>
+      Provisionner le OneDrive de chaque utilisateur
+      <span class="muted small">— necessite une licence, peut prendre plusieurs minutes</span>
+    </label>
+    <label class="check"><input type="checkbox" name="add_shortcut" checked>
+      Ajouter le raccourci du site dans chaque OneDrive
+    </label>
+    <div class="grid-2 mt">
+      <div>
+        <label for="shortcut_label">Nom du raccourci</label>
+        <input id="shortcut_label" name="shortcut_label" placeholder="(nom du site par defaut)">
+      </div>
+      <div>
+        <label for="shortcut_folder">Sous-dossier a cibler <span class="muted small">(optionnel)</span></label>
+        <input id="shortcut_folder" name="shortcut_folder" placeholder="General">
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Coffre ============ -->
+  <section>
+    <h3>5 · Depot dans Bitwarden</h3>
+    <label class="check">
+      <input type="checkbox" name="vault_enabled" {% if vault_ready %}checked{% else %}disabled{% endif %}>
+      Enregistrer chaque identifiant cree dans le coffre
+      {% if not vault_ready %}<span class="muted small">— indisponible : {{ vault_message }}</span>{% endif %}
+    </label>
+    {% if vault_ready %}
+    <p class="muted small mt">
+      Destination : {{ tenant.vault_org_id and 'organisation configuree' or 'coffre personnel' }}
+      {% if tenant.vault_collection_id %}, collection configuree{% endif %}.
+      Modifiable dans « Destination Bitwarden » ci-dessus.
+    </p>
+    {% endif %}
+  </section>
+
+  <div class="actions">
+    <button class="btn btn-primary btn-lg" type="submit">Lancer le provisionnement</button>
+  </div>
+</form>
+
+{% if jobs %}
+<h2 class="section">Traitements de ce client</h2>
+<table class="table">
+  <thead><tr><th>Etat</th><th>Lance</th><th>Par</th><th></th></tr></thead>
+  <tbody>
+  {% for j in jobs %}
+    <tr>
+      <td><span class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(j.status,'warn') }}">{{ j.status }}</span></td>
+      <td class="muted small">{{ j.created_at | dt }}</td>
+      <td class="muted small">{{ j.created_by }}</td>
+      <td class="right"><a class="btn btn-small" href="/jobs/{{ j.id }}">Journal</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/app.js"></script>
+{% endblock %}

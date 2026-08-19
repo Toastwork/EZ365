@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="card center">
+    <div class="big-icon">{{ '✓' if ok else '✕' }}</div>
+    <h1>{{ title }}</h1>
+    <p class="muted">{{ message }}</p>
+    {% if ok and operator %}
+      <a class="btn btn-primary" href="/tenants/{{ tenant_id }}">Ouvrir la fiche du client</a>
+    {% elif ok %}
+      <p class="muted small">Vous pouvez fermer cette fenetre : l'equipe informatique prend le relais.</p>
+    {% else %}
+      <a class="btn" href="/">Retour</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Tenants — {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Tenants connectes</h1>
+    <p class="muted">Chaque tenant a accorde le consentement administrateur a l'application EZ365.</p>
+  </div>
+  <a class="btn btn-primary" href="/tenants/connect">Connecter un tenant</a>
+</div>
+
+<div class="status-strip {{ 'ok' if vault_ready else 'ko' }}">
+  <strong>Coffre Bitwarden</strong>
+  <span>{{ vault_message }}</span>
+</div>
+
+{% if tenants %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Client</th>
+      <th>Domaine par defaut</th>
+      <th>Etat</th>
+      <th>Consentement</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for t in tenants %}
+    <tr>
+      <td>
+        <a class="strong" href="/tenants/{{ t.id }}">{{ t.display_name or t.id }}</a>
+        <div class="muted mono small">{{ t.id }}</div>
+      </td>
+      <td>{{ t.default_domain or '—' }}</td>
+      <td><span class="pill pill-{{ 'ok' if t.status == 'ok' else 'warn' }}">{{ t.status }}</span></td>
+      <td class="muted small">
+        {{ t.consented_at | dt }}<br>par {{ t.consented_by }}
+      </td>
+      <td class="right"><a class="btn btn-small" href="/tenants/{{ t.id }}">Ouvrir</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty card">
+  <h2>Aucun tenant pour l'instant</h2>
+  <p>
+    Cliquez sur <strong>Connecter un tenant</strong> et authentifiez-vous avec un compte
+    administrateur general du client. Vous pouvez aussi transmettre le lien de consentement
+    a l'administrateur du client s'il refuse de vous confier ses acces.
+  </p>
+</div>
+{% endif %}
+
+{% if jobs %}
+<h2 class="section">Derniers traitements</h2>
+<table class="table">
+  <thead>
+    <tr><th>Client</th><th>Type</th><th>Etat</th><th>Lance</th><th>Par</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for j in jobs %}
+    <tr>
+      <td>{{ j.tenant_name or j.tenant_id }}</td>
+      <td>{{ j.kind }}</td>
+      <td><span class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(j.status,'warn') }}">{{ j.status }}</span></td>
+      <td class="muted small">{{ j.created_at | dt }}</td>
+      <td class="muted small">{{ j.created_by }}</td>
+      <td class="right"><a class="btn btn-small" href="/jobs/{{ j.id }}">Journal</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

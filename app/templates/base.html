@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#9729;</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">EZ<span>365</span></a>
+  {% if operator %}
+  <nav>
+    <a href="/">Tenants</a>
+    <a href="/tenants/connect">Connecter un tenant</a>
+  </nav>
+  <div class="who">
+    <span title="{{ operator.username }}">{{ operator.display_name }}</span>
+    <a class="link-quiet" href="/logout">Deconnexion</a>
+  </div>
+  {% endif %}
+</header>
+
+<main class="page">
+  {% if flash %}
+    <div class="flash flash-{{ flash.level }}">{{ flash.message }}</div>
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <span>{{ app_name }} — provisionnement Microsoft 365</span>
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

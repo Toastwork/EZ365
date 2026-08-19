@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Connexion — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <form class="card login" method="post" action="/login">
+    <h1>Connexion</h1>
+    <p class="muted">
+      {% if auth_mode == 'ldap' %}
+        Compte Active Directory
+        {% if domain %}<code>@{{ domain }}</code>{% endif %}.
+        {% if required_group %}Acces reserve au groupe <strong>{{ required_group }}</strong>.{% endif %}
+      {% else %}
+        Mode d'authentification local (hors production).
+      {% endif %}
+    </p>
+
+    {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+
+    <label for="username">Identifiant</label>
+    <input id="username" name="username" value="{{ username or '' }}" autocomplete="username"
+           autofocus required placeholder="prenom.nom">
+
+    <label for="password">Mot de passe</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+    <input type="hidden" name="next_url" value="{{ request.query_params.get('next', '/') }}">
+    <button class="btn btn-primary" type="submit">Se connecter</button>
+  </form>
+</div>
+{% endblock %}

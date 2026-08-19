@@ -1,0 +1,58 @@
+# Deploiement EZ365. Les secrets ne sont volontairement PAS ecrits dans ce
+# fichier : renseignez-les dans un .env a cote (voir .env.example) ou dans les
+# variables d'environnement de la stack Portainer.
+services:
+  ez365:
+    image: ghcr.io/toastwork/ez365:latest
+    container_name: ez365
+    user: "0:0"
+    ports:
+      - "9001:8000"
+    environment:
+      AUTH_MODE: "${AUTH_MODE:-ldap}"
+      LDAP_SERVER: "${LDAP_SERVER}"
+      LDAP_USE_SSL: "${LDAP_USE_SSL:-false}"
+      LDAP_DOMAIN: "${LDAP_DOMAIN}"
+      LDAP_BASE_DN: "${LDAP_BASE_DN}"
+      LDAP_REQUIRED_GROUP: "${LDAP_REQUIRED_GROUP:-Informatique}"
+      STORAGE_KEY: "${STORAGE_KEY}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
+      # TLS servi directement par uvicorn. Si un reverse proxy termine deja le
+      # TLS devant le conteneur, laisser ces deux variables vides.
+      SSL_CERTFILE: "${SSL_CERTFILE:-/certs/vaultwarden.crt}"
+      SSL_KEYFILE: "${SSL_KEYFILE:-/certs/vaultwarden.key}"
+
+      MS_CLIENT_ID: "${MS_CLIENT_ID}"
+      MS_CLIENT_SECRET: "${MS_CLIENT_SECRET}"
+      MS_REDIRECT_URI: "${MS_REDIRECT_URI}"
+
+      VAULT_ENABLED: "${VAULT_ENABLED:-true}"
+      VAULT_API_URL: "http://bw-cli:8087"
+    volumes:
+      - /home/administrateur/data/ez365/data:/data
+      - /home/administrateur/data/bitwarden/certs:/certs:ro
+    restart: unless-stopped
+    depends_on:
+      - bw-cli
+
+  bw-cli:
+    image: ghcr.io/toastwork/ez365-bw-cli:latest
+    container_name: ez365-bw-cli
+    environment:
+      BW_SERVER: "${BW_SERVER}"
+      NODE_TLS_REJECT_UNAUTHORIZED: "${NODE_TLS_REJECT_UNAUTHORIZED:-0}"
+      # NODE_EXTRA_CA_CERTS: "/certs/ca-acskm.crt"
+      BW_CLIENTID: "${BW_CLIENTID}"
+      BW_CLIENTSECRET: "${BW_CLIENTSECRET}"
+      BW_PASSWORD: "${BW_PASSWORD}"
+    volumes:
+      - /home/administrateur/data/ez365/bw-cli:/data
+      - /home/administrateur/data/bitwarden/certs:/certs:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8087/status',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
