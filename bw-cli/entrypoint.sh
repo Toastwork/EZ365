@@ -3,8 +3,18 @@
 # la Vault Management API sur 0.0.0.0:8087 pour le conteneur ez365.
 #
 # Le dossier /data est persistant : au 2e demarrage une session existe deja.
-# La CLI refuse alors « bw config server » avec « Logout required before server
-# config update. » — on ne reconfigure donc le serveur que si c'est necessaire.
+# Deux pieges de la CLI en decoulent, et dictent la logique ci-dessous :
+#   - « bw config server » refuse de s'executer tant qu'une session existe
+#     (« Logout required before server config update. ») ;
+#   - « bw login --check » renvoie un code non nul quand le coffre est
+#     verrouille, alors que le compte EST authentifie.
+# On se fie donc au champ `status` de « bw status », seul indicateur fiable :
+#   unauthenticated -> il faut se connecter
+#   locked / unlocked -> deja connecte, il ne reste qu'a deverrouiller.
+#
+# Regle generale : aucune commande ne doit echouer en silence. Chaque echec
+# journalise la sortie reelle de la CLI avant d'arreter le conteneur, sinon le
+# redemarrage automatique masque la cause.
 set -eu
 
 : "${BW_SERVER:?BW_SERVER est requis}"
@@ -21,6 +31,14 @@ BW_SERVER="${BW_SERVER%/}"
 
 log() { echo "[bw-cli] $*"; }
 
+fatal() {
+  log "$1"
+  if [ $# -gt 1 ] && [ -n "$2" ]; then
+    log "Detail CLI : $2"
+  fi
+  exit 1
+}
+
 # Extrait un champ de `bw status`. La sortie est un objet JSON plat, parfois
 # precede d'avertissements : on decoupe sur les virgules et on prend la
 # premiere correspondance. `null` est ramene a une chaine vide.
@@ -35,13 +53,6 @@ bw_status_field() {
   printf '%s' "$value"
 }
 
-current_status="$(bw_status_field status)"
-current_server="$(bw_status_field serverUrl)"
-current_server="${current_server%/}"
-
-log "Serveur souhaite : $BW_SERVER"
-log "Etat au demarrage : ${current_status:-inconnu} (serveur : ${current_server:-aucun})"
-
 # Configure le serveur, en se deconnectant d'abord si la CLI l'exige.
 set_server() {
   if output="$(bw config server "$BW_SERVER" 2>&1)"; then
@@ -53,10 +64,18 @@ set_server() {
   if output="$(bw config server "$BW_SERVER" 2>&1)"; then
     return 0
   fi
-  log "Configuration du serveur impossible : $output"
-  log "Videz le volume /data de ce conteneur (ez365-bw-cli) puis relancez-le."
-  return 1
+  fatal "Configuration du serveur impossible. Videz le volume /data de ce conteneur (ez365-bw-cli) puis relancez-le." "$output"
 }
+
+# ---------------------------------------------------------------------------
+# 1. Serveur
+# ---------------------------------------------------------------------------
+current_status="$(bw_status_field status)"
+current_server="$(bw_status_field serverUrl)"
+current_server="${current_server%/}"
+
+log "Serveur souhaite : $BW_SERVER"
+log "Etat au demarrage : ${current_status:-inconnu} (serveur : ${current_server:-aucun})"
 
 if [ -z "$current_status" ] || [ "$current_status" = "unauthenticated" ]; then
   log "Aucune session : configuration du serveur."
@@ -69,21 +88,45 @@ else
   log "Serveur deja configure, session existante conservee."
 fi
 
-# `bw login --apikey` lit BW_CLIENTID / BW_CLIENTSECRET dans l'environnement.
-if bw login --check >/dev/null 2>&1; then
-  log "Deja authentifie."
-else
-  log "Authentification par cle API…"
-  bw login --apikey --quiet
-fi
+# ---------------------------------------------------------------------------
+# 2. Authentification
+# ---------------------------------------------------------------------------
+# Relu apres l'etape 1 : une deconnexion a pu changer l'etat.
+current_status="$(bw_status_field status)"
 
+case "$current_status" in
+  locked|unlocked)
+    log "Compte deja authentifie (coffre $current_status)."
+    ;;
+  *)
+    log "Authentification par cle API…"
+    # `bw login --apikey` lit BW_CLIENTID / BW_CLIENTSECRET dans l'environnement.
+    if ! output="$(bw login --apikey 2>&1)"; then
+      case "$output" in
+        *"already logged in"*|*"You are logged in"*)
+          log "La CLI signale une session deja ouverte, on continue." ;;
+        *)
+          fatal "Authentification refusee. Verifiez BW_CLIENTID et BW_CLIENTSECRET (cle API du compte de service Bitwarden)." "$output" ;;
+      esac
+    fi
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 3. Deverrouillage
+# ---------------------------------------------------------------------------
 log "Deverrouillage…"
-BW_SESSION="$(bw unlock --passwordenv BW_PASSWORD --raw)"
+if ! BW_SESSION="$(bw unlock --passwordenv BW_PASSWORD --raw 2>&1)"; then
+  fatal "Deverrouillage impossible. Verifiez BW_PASSWORD (mot de passe maitre du compte de service)." "$BW_SESSION"
+fi
+[ -n "$BW_SESSION" ] || fatal "Deverrouillage sans cle de session : verifiez BW_PASSWORD."
 export BW_SESSION
-[ -n "$BW_SESSION" ] || { log "Echec du deverrouillage : verifiez BW_PASSWORD."; exit 1; }
 
+# Une synchronisation qui echoue n'empeche pas de servir : on avertit seulement.
 log "Synchronisation du coffre…"
-bw sync >/dev/null
+if ! output="$(bw sync 2>&1)"; then
+  log "Synchronisation echouee (le coffre reste utilisable) : $output"
+fi
 
 log "Coffre deverrouille, demarrage de l'API sur 0.0.0.0:$PORT"
 
