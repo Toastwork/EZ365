@@ -94,6 +94,21 @@
       <div id="site-public-row">
         <label class="check"><input type="checkbox" name="site_public"> Site public (visible de tout le tenant)</label>
       </div>
+
+      <div class="span-2 shortcut-cell" id="site-folders">
+        <label for="new-folder">Dossiers a creer dans « Documents »</label>
+        <input type="hidden" name="site_folders" value="[]">
+        <div class="chips"></div>
+        <div class="folder-add-row">
+          <input id="new-folder" placeholder="Comptabilite  —  ou  Comptabilite/2026 pour un sous-dossier"
+                 onkeydown="if (event.key === 'Enter') { event.preventDefault(); addSiteFolder(); }">
+          <button type="button" class="btn" onclick="addSiteFolder()">+ Ajouter</button>
+        </div>
+        <p class="muted small">
+          Ces dossiers sont crees avec le site, puis proposes comme cibles de
+          raccourci sur les fiches utilisateur.
+        </p>
+      </div>
     </div>
 
     <div id="site-existing" class="hidden mt">

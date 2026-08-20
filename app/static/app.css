@@ -282,3 +282,9 @@ textarea { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
   .person-vault { grid-template-columns: 1fr; }
   .person-vault .check { margin-top: 0; }
 }
+
+/* ---------- dossiers a creer avec le site ---------- */
+.folder-add-row { display: flex; gap: .5rem; }
+.folder-add-row input { flex: 1; }
+.folder-add-row .btn { white-space: nowrap; }
+#site-folders .muted { margin: .35rem 0 0; }

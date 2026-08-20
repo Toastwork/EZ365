@@ -110,6 +110,8 @@ async def start_provisioning(
         "public": form.get("site_public") == "on",
         "site_id": (form.get("existing_site_id") or "").strip(),
         "owner_upn": (form.get("site_owner_upn") or "").strip(),
+        # Dossiers a creer dans la bibliotheque d'un site tout neuf.
+        "folders": parse_shortcuts(form.get("site_folders", "")),
     }
 
     # -- utilisateurs : lignes du tableau + collage en masse -----------------

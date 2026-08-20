@@ -270,6 +270,65 @@ async def vault_tests():
 
 asyncio.run(vault_tests())
 
+# --- creation de dossiers dans un nouveau site ---------------------------
+from app.provisioning import clean_folder_path
+check("chemin nettoye", clean_folder_path(" Compta / 2026 ") == "Compta/2026", clean_folder_path(" Compta / 2026 "))
+check("caractere interdit refuse", clean_folder_path("A|B") == "", clean_folder_path("A|B"))
+check("deux-points refuse", clean_folder_path("A:B") == "", clean_folder_path("A:B"))
+check("vide refuse", clean_folder_path("//") == "", clean_folder_path("//"))
+check("point final retire", clean_folder_path("Doc.") == "Doc", clean_folder_path("Doc."))
+
+async def folder_tests():
+    from app.msgraph.client import GraphClient, GraphError
+
+    class G(GraphClient):
+        def __init__(self, present=()):
+            self.present = set(present); self.created = []; self.conflict_once = set()
+        async def drive_item(self, drive_id, path=""):
+            path = (path or "").strip("/")
+            return {"id": "id-" + path} if path in self.present else None
+        async def post(self, path, json=None, **kw):
+            name = json["name"]
+            parent = "" if path.endswith("/root/children") else path.split("root:/")[1].split(":/")[0]
+            full = (parent + "/" + name).strip("/")
+            if full in self.conflict_once:
+                self.conflict_once.discard(full)
+                self.present.add(full)
+                raise GraphError(409, "nameAlreadyExists", "existe deja")
+            self.created.append(full)
+            self.present.add(full)
+            return {"id": "id-" + full}
+        async def default_site_drive(self, site_id): return {"id": "D", "name": "Documents"}
+        async def site_drives(self, site_id): return []
+
+    g = G()
+    await g.ensure_folder("D", "Compta/2026/Factures")
+    check("arborescence creee de haut en bas",
+          g.created == ["Compta", "Compta/2026", "Compta/2026/Factures"], g.created)
+
+    g2 = G(present={"Compta"})
+    await g2.ensure_folder("D", "Compta/2026")
+    check("dossier existant traverse sans recreation", g2.created == ["Compta/2026"], g2.created)
+
+    g3 = G(); g3.conflict_once = {"Compta"}
+    await g3.ensure_folder("D", "Compta/2026")
+    check("conflit 409 absorbe", g3.created == ["Compta/2026"], g3.created)
+
+    g4 = G()
+    check("chemin vide ignore", await g4.ensure_folder("D", "  ") is None)
+
+    # orchestration : noms invalides signales, le reste passe
+    ctx = Ctx()
+    g5 = G()
+    await provisioning.create_site_folders(
+        ctx, g5, {"id": "S"}, ["Compta", "Mauvais|Nom", "RH/Contrats"])
+    check("seuls les noms valides sont crees",
+          g5.created == ["Compta", "RH", "RH/Contrats"], g5.created)
+    check("nom refuse signale",
+          any("refuse par SharePoint" in m for lvl, m in ctx.msgs), ctx.msgs)
+
+asyncio.run(folder_tests())
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)

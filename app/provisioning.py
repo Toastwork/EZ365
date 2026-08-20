@@ -183,6 +183,49 @@ async def resolve_shortcut_target(
     return {"driveId": drive["id"], "itemId": item["id"], "name": drive.get("name", "Documents")}
 
 
+# Caracteres refuses par SharePoint dans un nom de dossier (« / » sert de
+# separateur de niveaux et reste donc autorise dans le chemin).
+INVALID_FOLDER_CHARS = set(r'"*:<>?\|')
+
+
+def clean_folder_path(path: str) -> str:
+    """Chemin de dossier utilisable, ou chaine vide s'il est inexploitable."""
+    parts = []
+    for part in (path or "").split("/"):
+        part = part.strip().strip(".")
+        if not part or any(c in INVALID_FOLDER_CHARS for c in part):
+            return ""
+        parts.append(part)
+    return "/".join(parts)
+
+
+async def create_site_folders(
+    ctx: JobContext, graph: GraphClient, site: dict, folders: list[str]
+) -> None:
+    """Cree l'arborescence demandee dans la bibliotheque du nouveau site."""
+    if not folders:
+        return
+
+    drive = await graph.default_site_drive(site["id"])
+    if not drive:
+        drives = await graph.site_drives(site["id"])
+        drive = drives[0] if drives else None
+    if not drive:
+        ctx.warn("sharepoint", "Bibliotheque introuvable : aucun dossier cree.")
+        return
+
+    for raw in folders:
+        path = clean_folder_path(raw)
+        if not path:
+            ctx.warn("sharepoint", f"Nom de dossier refuse par SharePoint : « {raw} »")
+            continue
+        try:
+            await graph.ensure_folder(drive["id"], path)
+            ctx.success("sharepoint", f"Dossier « {path} » cree.")
+        except GraphError as exc:
+            ctx.error("sharepoint", f"Creation du dossier « {path} » impossible : {exc.friendly}")
+
+
 # ---------------------------------------------------------------------------
 # Etape 2 : utilisateurs
 # ---------------------------------------------------------------------------
@@ -529,6 +572,11 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
 
     async with GraphClient(tenant["id"]) as graph:
         site = await ensure_site(ctx, graph, site_spec)
+
+        # Les dossiers ne sont crees que sur un site tout neuf : sur un site
+        # existant, l'operateur choisit parmi ceux deja en place.
+        if site and site_spec.get("mode") in ("team", "communication"):
+            await create_site_folders(ctx, graph, site, site_spec.get("folders") or [])
 
         results = await create_users(ctx, graph, user_specs, site)
 

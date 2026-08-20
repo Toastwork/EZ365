@@ -122,6 +122,20 @@ d'environnement manquantes.
    ligne ou collage depuis Excel), les licences, puis lancer. Le journal
    s'affiche en direct et reste consultable ensuite.
 
+### Dossiers d'un nouveau site
+
+Lors de la creation d'un site (equipe ou communication), un bloc « Dossiers a
+creer dans Documents » permet de definir l'arborescence : un nom par ajout,
+`Comptabilite/2026` creant le sous-dossier et son parent.
+
+Ces dossiers sont crees juste apres le site, avant les utilisateurs, et
+alimentent immediatement les listes de raccourcis des fiches : on peut donc
+viser un dossier qui n'existe pas encore au moment de remplir le formulaire.
+
+La creation est rejouable — un dossier deja present est traverse, pas recree —
+et les noms contenant un caractere refuse par SharePoint (`" * : < > ? \ |`)
+sont ecartes avec un avertissement dans le journal, sans interrompre le reste.
+
 ### Presentation
 
 Chaque personne occupe une **fiche** : identite et licence en haut, options de

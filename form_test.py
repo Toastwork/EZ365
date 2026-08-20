@@ -30,6 +30,7 @@ with TestClient(app) as client:
     # une liste de tuples serait prise pour un flux binaire.
     form = {
         "site_mode": "none", "user_domain": "c.fr", "usage_location": "FR",
+        "site_folders": '["Compta","RH/Contrats"]',
         "default_sku": "sku-std|BUSINESS_STANDARD",
         "first_name": ["Marie", "Jean", "Zoe"],
         "last_name": ["Dupont", "Martin", "Bernard"],
@@ -64,6 +65,9 @@ with TestClient(app) as client:
     users = {u["upn"]: u for u in jobs.job_payload(job_id)["users"]}
 
     check("5 utilisateurs dans le traitement", len(users) == 5, sorted(users))
+    payload = jobs.job_payload(job_id)
+    check("dossiers du site transmis",
+          payload["site"]["folders"] == ["Compta", "RH/Contrats"], payload["site"])
     check("licence par defaut appliquee",
           users["marie.dupont@c.fr"]["sku_names"] == ["BUSINESS_STANDARD"], users["marie.dupont@c.fr"])
     check("licence propre a la ligne",

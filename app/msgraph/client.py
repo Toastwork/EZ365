@@ -318,6 +318,46 @@ class GraphClient:
         collected.sort(key=lambda f: f["path"].casefold())
         return collected
 
+    async def ensure_folder(self, drive_id: str, path: str) -> dict | None:
+        """Cree un dossier et ses parents s'ils manquent, sans rien ecraser.
+
+        « Compta/2026 » cree « Compta » puis « 2026 » a l'interieur. Un dossier
+        deja present est simplement traverse : l'operation est rejouable.
+        """
+        parts = [p.strip() for p in (path or "").split("/") if p.strip()]
+        if not parts:
+            return None
+
+        parent, item = "", None
+        for name in parts:
+            current = f"{parent}/{name}".strip("/")
+            existing = await self.drive_item(drive_id, current)
+            if existing:
+                item, parent = existing, current
+                continue
+
+            target = (
+                f"/drives/{drive_id}/root/children"
+                if not parent
+                else f"/drives/{drive_id}/root:/{parent}:/children"
+            )
+            try:
+                item = await self.post(
+                    target,
+                    json={
+                        "name": name,
+                        "folder": {},
+                        "@microsoft.graph.conflictBehavior": "fail",
+                    },
+                )
+            except GraphError as exc:
+                # 409 : cree entre-temps (traitements concurrents) — on relit.
+                if exc.status != 409:
+                    raise
+                item = await self.drive_item(drive_id, current)
+            parent = current
+        return item
+
     async def create_m365_group(self, payload: dict) -> dict:
         return await self.post("/groups", json=payload)
 

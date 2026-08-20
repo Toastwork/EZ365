@@ -15,10 +15,14 @@ function siteMode(mode) {
   document.getElementById("site-owner-row").classList.toggle("hidden", mode !== "communication");
   document.getElementById("site-public-row").classList.toggle("hidden", mode !== "team");
 
-  // Les dossiers ne sont connus que pour un site deja existant : un site cree
-  // a l'instant n'a pas encore de bibliotheque a explorer.
+  document.getElementById("site-folders").classList.toggle("hidden", !isNew);
+
+  // Un site existant fournit ses dossiers reels ; un site a creer, ceux que
+  // l'operateur prevoit d'y creer.
   if (mode === "existing") {
     loadFolders(document.getElementById("existing_site_id").value);
+  } else if (isNew) {
+    syncPlannedFolders();
   } else {
     loadFolders("");
   }
@@ -73,6 +77,7 @@ function renderChips(cell) {
       next.splice(index, 1);
       cell.querySelector("input[type=hidden]").value = JSON.stringify(next);
       renderChips(cell);
+      if (cell.id === "site-folders") { syncPlannedFolders(); }
     };
     chip.appendChild(label);
     chip.appendChild(remove);
@@ -132,6 +137,62 @@ function refreshVaultName(card) {
   const domainField = document.getElementById("user_domain");
   const domain = (domainField && domainField.value) || "";
   field.value = alias ? vaultClientCode(domain) + "-OFFICE-" + alias.toUpperCase() : "";
+}
+
+// ---------------------------------------------------------------------------
+// Dossiers a creer avec un nouveau site
+// ---------------------------------------------------------------------------
+const INVALID_FOLDER_CHARS = /["*:<>?\|]/;
+
+function siteFoldersCell() {
+  return document.getElementById("site-folders");
+}
+
+function addSiteFolder() {
+  const field = document.getElementById("new-folder");
+  const cell = siteFoldersCell();
+  const raw = (field.value || "").trim();
+  if (!raw) { return; }
+
+  const parts = raw.split("/").map(function (p) { return p.trim(); }).filter(Boolean);
+  if (!parts.length || parts.some(function (p) { return INVALID_FOLDER_CHARS.test(p); })) {
+    alert("Ce nom contient un caractere refuse par SharePoint :  \" * : < > ? \ |");
+    return;
+  }
+  const path = parts.join("/");
+  const list = shortcutsOf(cell);
+  if (list.indexOf(path) === -1) {
+    list.push(path);
+    cell.querySelector("input[type=hidden]").value = JSON.stringify(list);
+    renderChips(cell);
+    syncPlannedFolders();
+  }
+  field.value = "";
+  field.focus();
+}
+
+// Les dossiers prevus alimentent les listes de raccourcis : on peut ainsi
+// viser un dossier qui n'existe pas encore, il sera cree avant les raccourcis.
+function syncPlannedFolders() {
+  const cell = siteFoldersCell();
+  const paths = shortcutsOf(cell);
+  const known = {};
+  const planned = [];
+  paths.forEach(function (path) {
+    // Un chemin implique ses parents, proposes eux aussi.
+    const parts = path.split("/");
+    let current = "";
+    parts.forEach(function (part, depth) {
+      current = current ? current + "/" + part : part;
+      if (!known[current]) {
+        known[current] = true;
+        planned.push({ name: part, path: current, level: depth + 1 });
+      }
+    });
+  });
+  planned.sort(function (a, b) { return a.path.localeCompare(b.path); });
+  folderCache = planned;
+  applyFolders();
 }
 
 async function loadFolders(siteId) {
