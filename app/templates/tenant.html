@@ -60,7 +60,7 @@
 
 <!-- ------------------------------------------------------------------ -->
 <form method="post" action="/tenants/{{ tenant.id }}/provision" class="card provision"
-      onsubmit="return confirmProvision(this);">
+      data-tenant="{{ tenant.id }}" onsubmit="return confirmProvision(this);">
   <h2>Provisionner</h2>
 
   <!-- ============ SharePoint ============ -->
@@ -98,12 +98,13 @@
 
     <div id="site-existing" class="hidden mt">
       <label for="existing_site_id">Site existant</label>
-      <select id="existing_site_id" name="existing_site_id">
+      <select id="existing_site_id" name="existing_site_id" onchange="loadFolders(this.value)">
         <option value="">— Choisir —</option>
         {% for s in sites %}
           <option value="{{ s.id }}">{{ s.displayName or s.name }} — {{ s.webUrl }}</option>
         {% endfor %}
       </select>
+      <p id="folder-status" class="muted small mt"></p>
     </div>
   </section>
 
@@ -129,7 +130,11 @@
 
     <table class="table compact mt" id="users-table">
       <thead>
-        <tr><th>Prenom</th><th>Nom</th><th>Alias <span class="muted small">(avant @)</span></th><th>Fonction</th><th>Service</th><th></th></tr>
+        <tr>
+          <th>Prenom</th><th>Nom</th><th>Alias <span class="muted small">(avant @)</span></th>
+          <th>Fonction</th><th>Service</th>
+          <th>Dossier raccourci</th><th></th>
+        </tr>
       </thead>
       <tbody id="users-body">
         <tr>
@@ -138,6 +143,11 @@
           <td><input name="alias" placeholder="prenom.nom"></td>
           <td><input name="job_title"></td>
           <td><input name="department"></td>
+          <td>
+            <select name="user_folder" class="folder-select">
+              <option value="">— dossier par defaut —</option>
+            </select>
+          </td>
           <td><button type="button" class="btn btn-small" onclick="removeRow(this)">×</button></td>
         </tr>
       </tbody>
@@ -146,8 +156,8 @@
 
     <details class="mt">
       <summary class="muted">Coller une liste (Excel, CSV)</summary>
-      <p class="muted small mt">Une ligne par personne : <code>Prenom;Nom;alias;Fonction;Service</code>. Tabulations et virgules acceptees.</p>
-      <textarea name="bulk_users" rows="5" placeholder="Marie;Dupont;marie.dupont;Comptable;Finance"></textarea>
+      <p class="muted small mt">Une ligne par personne : <code>Prenom;Nom;alias;Fonction;Service;Dossier</code>. Tabulations et virgules acceptees ; la derniere colonne est facultative.</p>
+      <textarea name="bulk_users" rows="5" placeholder="Marie;Dupont;marie.dupont;Comptable;Finance;Comptabilite"></textarea>
     </details>
   </section>
 
@@ -181,12 +191,15 @@
     </label>
     <div class="grid-2 mt">
       <div>
-        <label for="shortcut_label">Nom du raccourci</label>
+        <label for="shortcut_label">Nom du raccourci <span class="muted small">(si aucun dossier vise)</span></label>
         <input id="shortcut_label" name="shortcut_label" placeholder="(nom du site par defaut)">
       </div>
       <div>
-        <label for="shortcut_folder">Sous-dossier a cibler <span class="muted small">(optionnel)</span></label>
-        <input id="shortcut_folder" name="shortcut_folder" placeholder="General">
+        <label for="shortcut_folder">Dossier par defaut</label>
+        <select id="shortcut_folder" name="shortcut_folder" class="folder-select">
+          <option value="">— racine de la bibliotheque —</option>
+        </select>
+        <p class="muted small">Applique aux utilisateurs dont la colonne « Dossier raccourci » est vide.</p>
       </div>
     </div>
   </section>

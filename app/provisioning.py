@@ -56,6 +56,9 @@ def normalize_user(raw: dict, domain: str, default_usage_location: str) -> dict:
         "usage_location": (raw.get("usage_location") or default_usage_location or "FR").upper()[:2],
         "password": (raw.get("password") or "").strip(),
         "force_change": bool(raw.get("force_change", True)),
+        # Dossier de la bibliotheque a raccourcir pour cette personne ;
+        # vide = dossier par defaut du traitement.
+        "shortcut_folder": (raw.get("shortcut_folder") or "").strip().strip("/"),
     }
 
 
@@ -153,6 +156,7 @@ async def create_users(
             "licenses": [],
             "onedrive": "en attente",
             "shortcut": "en attente",
+            "shortcut_folder": spec.get("shortcut_folder", ""),
             "vault": "en attente",
             "errors": [],
         }
@@ -287,18 +291,47 @@ async def provision_onedrives(ctx: JobContext, graph: GraphClient, results: list
 # Etape 4 : raccourcis
 # ---------------------------------------------------------------------------
 async def add_shortcuts(
-    ctx: JobContext, graph: GraphClient, results: list[dict], target: dict, label: str
+    ctx: JobContext,
+    graph: GraphClient,
+    results: list[dict],
+    site: dict,
+    default_folder: str,
+    default_label: str,
 ) -> None:
+    """Chaque utilisateur peut viser un dossier different de la bibliotheque.
+
+    Les cibles sont resolues une seule fois par dossier : dix utilisateurs
+    pointant sur « Comptabilite » ne declenchent qu'un aller-retour Graph.
+    """
+    targets: dict[str, dict | None] = {}
+
+    async def target_for(folder: str) -> dict | None:
+        if folder not in targets:
+            targets[folder] = await resolve_shortcut_target(ctx, graph, site, folder)
+        return targets[folder]
+
     for entry in results:
         drive_id = entry.get("drive_id")
         if not drive_id:
             entry["shortcut"] = "impossible (OneDrive absent)"
             continue
+
+        folder = (entry.get("shortcut_folder") or default_folder or "").strip("/")
+        target = await target_for(folder)
+        if not target:
+            entry["shortcut"] = "cible introuvable"
+            entry["errors"].append(f"raccourci : dossier « {folder} » introuvable")
+            continue
+
+        # Le raccourci prend le nom du dossier vise, sinon celui du site.
+        label = folder.rsplit("/", 1)[-1] if folder else default_label
+        entry["shortcut_target"] = folder or "(racine)"
+
         try:
             existing = await sharepoint.existing_shortcut_names(graph, drive_id)
             if label.casefold() in existing:
                 entry["shortcut"] = "deja present"
-                ctx.info("raccourcis", f"Raccourci deja present chez {entry['upn']}")
+                ctx.info("raccourcis", f"Raccourci « {label} » deja present chez {entry['upn']}")
                 continue
             await sharepoint.add_shortcut(
                 graph, drive_id, target["driveId"], target["itemId"], label
@@ -408,17 +441,17 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
                 entry["onedrive"] = "non demande"
 
         if do_shortcut and site:
-            target = await resolve_shortcut_target(
-                ctx, graph, site, site_spec.get("shortcut_folder", "")
+            default_label = site_spec.get("shortcut_label") or (
+                site_spec.get("display_name") or "Documents"
             )
-            if target:
-                label = site_spec.get("shortcut_label") or (
-                    site_spec.get("display_name") or target["name"]
-                )
-                await add_shortcuts(ctx, graph, results, target, label)
-            else:
-                for entry in results:
-                    entry["shortcut"] = "cible introuvable"
+            await add_shortcuts(
+                ctx,
+                graph,
+                results,
+                site,
+                site_spec.get("shortcut_folder", ""),
+                default_label,
+            )
         else:
             for entry in results:
                 entry["shortcut"] = "non demande"

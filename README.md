@@ -122,6 +122,21 @@ d'environnement manquantes.
    ligne ou collage depuis Excel), les licences, puis lancer. Le journal
    s'affiche en direct et reste consultable ensuite.
 
+### Raccourcis par utilisateur
+
+Quand un **site existant** est choisi, les dossiers de sa bibliotheque
+« Documents » sont lus et proposes en liste (deux niveaux de profondeur, 300
+dossiers au maximum). Chaque utilisateur peut alors recevoir le raccourci d'un
+dossier different : la colonne « Dossier raccourci » du tableau, ou la 6e
+colonne lors d'un collage en masse (`Prenom;Nom;alias;Fonction;Service;Dossier`).
+
+Les lignes laissees vides retombent sur le « dossier par defaut » du
+traitement ; si celui-ci est vide aussi, le raccourci vise la racine de la
+bibliotheque. Le raccourci prend le nom du dossier vise, sinon celui du site.
+
+Les cibles sont resolues une fois par dossier distinct : dix personnes pointant
+sur le meme dossier ne coutent qu'un aller-retour Graph.
+
 ### Notes de fonctionnement
 
 - **OneDrive** : le provisionnement est declenche pour tous les comptes puis

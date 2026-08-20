@@ -261,6 +261,61 @@ class GraphClient:
                 return None
             raise
 
+    async def list_child_folders(self, drive_id: str, path: str = "") -> list[dict]:
+        """Sous-dossiers directs d'un dossier de bibliotheque (racine si vide)."""
+        path = (path or "").strip("/")
+        target = (
+            f"/drives/{drive_id}/root/children"
+            if not path
+            else f"/drives/{drive_id}/root:/{path}:/children"
+        )
+        try:
+            items = await self.get_all(
+                target,
+                params={"$select": "id,name,folder,webUrl", "$top": "200"},
+                limit=500,
+            )
+        except GraphError as exc:
+            if exc.status == 404:
+                return []
+            raise
+        return [i for i in items if i.get("folder") is not None]
+
+    async def list_folder_tree(
+        self, drive_id: str, path: str = "", depth: int = 2, max_items: int = 300
+    ) -> list[dict]:
+        """Arborescence aplatie des dossiers, pour alimenter une liste deroulante.
+
+        Bornee en profondeur et en nombre : une bibliotheque de client peut
+        contenir des milliers de dossiers, et on ne veut ni saturer l'interface
+        ni multiplier les appels Graph.
+        """
+        collected: list[dict] = []
+
+        async def walk(current: str, level: int) -> None:
+            if level > depth or len(collected) >= max_items:
+                return
+            for folder in await self.list_child_folders(drive_id, current):
+                # Verifie en tete de boucle : un `return` place apres l'appel
+                # recursif n'arreterait que la branche, pas le parcours parent.
+                if len(collected) >= max_items:
+                    return
+                relative = f"{current}/{folder['name']}".strip("/")
+                collected.append(
+                    {
+                        "name": folder["name"],
+                        "path": relative,
+                        "level": level,
+                        "childCount": (folder.get("folder") or {}).get("childCount", 0),
+                        "webUrl": folder.get("webUrl"),
+                    }
+                )
+                await walk(relative, level + 1)
+
+        await walk((path or "").strip("/"), 1)
+        collected.sort(key=lambda f: f["path"].casefold())
+        return collected
+
     async def create_m365_group(self, payload: dict) -> dict:
         return await self.post("/groups", json=payload)
 

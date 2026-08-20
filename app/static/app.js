@@ -14,6 +14,74 @@ function siteMode(mode) {
   document.getElementById("site-existing").classList.toggle("hidden", mode !== "existing");
   document.getElementById("site-owner-row").classList.toggle("hidden", mode !== "communication");
   document.getElementById("site-public-row").classList.toggle("hidden", mode !== "team");
+
+  // Les dossiers ne sont connus que pour un site deja existant : un site cree
+  // a l'instant n'a pas encore de bibliotheque a explorer.
+  if (mode === "existing") {
+    loadFolders(document.getElementById("existing_site_id").value);
+  } else {
+    loadFolders("");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Dossiers de la bibliotheque « Documents » du site choisi
+// ---------------------------------------------------------------------------
+let folderCache = [];
+
+function applyFolders() {
+  document.querySelectorAll("select.folder-select").forEach(function (select) {
+    const chosen = select.value;
+    const placeholder = select.options[0];
+    select.innerHTML = "";
+    select.appendChild(placeholder);
+    folderCache.forEach(function (folder) {
+      const option = document.createElement("option");
+      option.value = folder.path;
+      // Indentation visuelle des sous-dossiers.
+      option.textContent = "   ".repeat(folder.level - 1) + folder.name;
+      option.title = folder.path;
+      select.appendChild(option);
+    });
+    select.value = chosen; // conserve le choix si le dossier existe toujours
+  });
+}
+
+async function loadFolders(siteId) {
+  const form = document.querySelector("form.provision");
+  const status = document.getElementById("folder-status");
+  const setStatus = function (text) { if (status) { status.textContent = text; } };
+
+  if (!siteId || !form) {
+    folderCache = [];
+    applyFolders();
+    setStatus("");
+    return;
+  }
+
+  setStatus("Lecture des dossiers…");
+  try {
+    const url = "/api/tenants/" + encodeURIComponent(form.dataset.tenant) +
+                "/folders?site_id=" + encodeURIComponent(siteId);
+    const resp = await fetch(url, { headers: { Accept: "application/json" } });
+    const data = await resp.json();
+    if (!resp.ok) {
+      folderCache = [];
+      applyFolders();
+      setStatus(data.error || "Dossiers illisibles.");
+      return;
+    }
+    folderCache = data.folders || [];
+    applyFolders();
+    const library = (data.drive && data.drive.name) || "Documents";
+    setStatus(folderCache.length
+      ? folderCache.length + " dossier(s) trouve(s) dans « " + library + " »."
+      : "Aucun sous-dossier dans « " + library + " » : les raccourcis viseront la racine.");
+  } catch (err) {
+    folderCache = [];
+    applyFolders();
+    setStatus("Lecture des dossiers impossible.");
+  }
 }
 
 function suggestPath(value) {
@@ -32,10 +100,15 @@ function suggestAlias(input) {
 
 function addRow() {
   const body = document.getElementById("users-body");
+  // Le clone reprend la liste de dossiers deja chargee dans la 1re ligne ;
+  // seules les valeurs saisies sont remises a zero.
   const row = body.rows[0].cloneNode(true);
   row.querySelectorAll("input").forEach(function (input) {
     input.value = "";
     delete input.dataset.touched;
+  });
+  row.querySelectorAll("select").forEach(function (select) {
+    select.selectedIndex = 0;
   });
   body.appendChild(row);
   row.querySelector("input").focus();
@@ -46,7 +119,9 @@ function removeRow(button) {
   if (body.rows.length > 1) {
     button.closest("tr").remove();
   } else {
-    button.closest("tr").querySelectorAll("input").forEach(function (i) { i.value = ""; });
+    const row = button.closest("tr");
+    row.querySelectorAll("input").forEach(function (i) { i.value = ""; });
+    row.querySelectorAll("select").forEach(function (s) { s.selectedIndex = 0; });
   }
 }
 

@@ -19,10 +19,11 @@ MAX_USERS = 200
 
 
 def parse_bulk(text: str) -> list[dict]:
-    """Une ligne par utilisateur : Prenom;Nom;alias;Fonction;Service.
+    """Une ligne par utilisateur : Prenom;Nom;alias;Fonction;Service;Dossier.
 
     Le point-virgule, la virgule et la tabulation sont acceptes comme
-    separateurs (un copier-coller d'Excel arrive en tabulations).
+    separateurs (un copier-coller d'Excel arrive en tabulations). La derniere
+    colonne, facultative, est le dossier a raccourcir pour cette personne.
     """
     users: list[dict] = []
     for raw_line in (text or "").splitlines():
@@ -35,7 +36,7 @@ def parse_bulk(text: str) -> list[dict]:
                 break
         else:
             parts = [line]
-        parts += [""] * (5 - len(parts))
+        parts += [""] * (6 - len(parts))
         users.append(
             {
                 "first_name": parts[0],
@@ -43,6 +44,7 @@ def parse_bulk(text: str) -> list[dict]:
                 "alias": parts[2],
                 "job_title": parts[3],
                 "department": parts[4],
+                "shortcut_folder": parts[5],
             }
         )
     return users
@@ -76,6 +78,7 @@ async def start_provisioning(
     aliases = form.getlist("alias")
     job_titles = form.getlist("job_title")
     departments = form.getlist("department")
+    user_folders = form.getlist("user_folder")
 
     raw_users: list[dict] = []
     for i in range(len(first_names)):
@@ -91,6 +94,10 @@ async def start_provisioning(
                 "alias": alias,
                 "job_title": (job_titles[i] if i < len(job_titles) else "").strip(),
                 "department": (departments[i] if i < len(departments) else "").strip(),
+                # Vide = on retombe sur le dossier par defaut du traitement.
+                "shortcut_folder": (
+                    user_folders[i] if i < len(user_folders) else ""
+                ).strip(),
             }
         )
     raw_users.extend(parse_bulk(form.get("bulk_users", "")))
@@ -219,6 +226,41 @@ async def job_cancel(
     else:
         flash(request, "Ce traitement n'est plus en cours.", "info")
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
+@router.get("/api/tenants/{tenant_id}/folders")
+async def list_site_folders(
+    tenant_id: str,
+    site_id: str = Query(...),
+    path: str = Query(""),
+    depth: int = Query(2, ge=1, le=4),
+    operator: Operator = Depends(current_operator),
+):
+    """Dossiers de la bibliotheque « Documents » d'un site, pour le choix
+    du raccourci — global ou par utilisateur."""
+    get_tenant(tenant_id)
+    try:
+        async with GraphClient(tenant_id) as graph:
+            drive = await graph.default_site_drive(site_id)
+            if not drive:
+                drives = await graph.site_drives(site_id)
+                drive = drives[0] if drives else None
+            if not drive:
+                return JSONResponse(
+                    {"error": "Aucune bibliotheque de documents sur ce site.", "folders": []},
+                    status_code=404,
+                )
+            folders = await graph.list_folder_tree(drive["id"], path, depth=depth)
+    except GraphError as exc:
+        return JSONResponse({"error": exc.friendly, "folders": []}, status_code=502)
+
+    return JSONResponse(
+        {
+            "drive": {"id": drive["id"], "name": drive.get("name", "Documents")},
+            "path": path,
+            "folders": folders,
+        }
+    )
 
 
 @router.get("/api/tenants/{tenant_id}/users")
