@@ -3,12 +3,15 @@
 <div class="card">
   <h2>Recapitulatif</h2>
   <p class="muted">
-    {{ data.created }} compte(s) cree(s) sur {{ data.total }}.
+    {% if data.users %}{{ data.created }} compte(s) cree(s) sur {{ data.total }}.{% endif %}
     {% if data.site and data.site.webUrl %}
-      Site : <a href="{{ data.site.webUrl }}" target="_blank" rel="noopener">{{ data.site.webUrl }}</a>.
+      Site : <a href="{{ data.site.webUrl }}" target="_blank" rel="noopener">{{ data.site.webUrl }}</a>
+    {% elif not data.users %}
+      Aucun site cree.
     {% endif %}
   </p>
 
+  {% if data.users %}
   <table class="table compact">
     <thead>
       <tr><th>Utilisateur</th><th>Compte</th><th>Licences</th><th>OneDrive</th><th>Raccourci</th><th>Coffre</th></tr>
@@ -53,5 +56,6 @@
     {% endfor %}
     </tbody>
   </table>
+  {% endif %}
 </div>
 {% endif %}

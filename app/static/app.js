@@ -134,7 +134,7 @@ function refreshVaultName(card) {
   if (!field || field.dataset.touched) { return; }
   const aliasField = card.querySelector("input[name=alias]");
   const alias = (aliasField && aliasField.value.trim()) || "";
-  const domainField = document.getElementById("user_domain");
+  const domainField = card.querySelector("select[name=user_domain]");
   const domain = (domainField && domainField.value) || "";
   field.value = alias ? vaultClientCode(domain) + "-OFFICE-" + alias.toUpperCase() : "";
 }
@@ -301,7 +301,9 @@ function pickedUpns() {
 function skuOptions(placeholder) {
   const select = document.createElement("select");
   select.appendChild(new Option(placeholder, ""));
-  const source = document.getElementById("default_sku");
+  // Les licences sont rendues par le serveur dans la 1re fiche : on les
+  // recopie plutot que d'embarquer un second jeu de donnees.
+  const source = document.querySelector("#users-list select[name=user_sku]");
   if (source) {
     Array.from(source.options).slice(1).forEach(function (opt) {
       const copy = new Option(opt.textContent.trim(), opt.value);
@@ -565,18 +567,37 @@ document.addEventListener("input", function (event) {
   }
 });
 
-function refreshDomain() {
-  const field = document.getElementById("user_domain");
-  const domain = ((field && field.value) || "").trim();
-  document.querySelectorAll(".upn-domain").forEach(function (span) {
-    span.textContent = domain ? "@" + domain : "@…";
-  });
-  document.querySelectorAll("#users-list .person-card").forEach(refreshVaultName);
+// Changer le domaine d'une fiche met a jour le nom d'entree du coffre.
+function onDomainChange(select) {
+  const card = select.closest(".person-card");
+  if (card) { refreshVaultName(card); }
+}
+
+// Le bouton « Creer le site » soumet le meme formulaire a une autre route :
+// on resume ce qui va etre cree, sans parler des utilisateurs.
+function confirmSiteCreation() {
+  const form = document.querySelector("form.provision");
+  const mode = form.querySelector("input[name=site_mode]:checked").value;
+  if (mode !== "team" && mode !== "communication") {
+    alert("Choisissez d'abord « nouveau site d'equipe » ou « nouveau site de communication ».");
+    return false;
+  }
+  const name = (form.querySelector("[name=site_display_name]").value || "").trim();
+  if (!name) {
+    alert("Renseignez le nom du site.");
+    return false;
+  }
+  let folders = [];
+  try { folders = JSON.parse(form.querySelector("[name=site_folders]").value || "[]"); }
+  catch (err) { folders = []; }
+  return confirm(
+    "Creer le site « " + name + " »"
+    + (folders.length ? " et ses " + folders.length + " dossier(s)" : "")
+    + " ?\n\nLes utilisateurs ne sont pas traites par ce bouton."
+  );
 }
 
 document.addEventListener("DOMContentLoaded", function () {
   const checked = document.querySelector("input[name=site_mode]:checked");
   if (checked) { siteMode(checked.value); }
-  const domain = document.getElementById("user_domain");
-  if (domain) { domain.addEventListener("input", refreshDomain); }
 });

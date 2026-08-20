@@ -92,18 +92,10 @@ def split_sku(value: str) -> tuple[list[str], list[str]]:
     return [sku_id], [label or sku_id]
 
 
-@router.post("/tenants/{tenant_id}/provision")
-async def start_provisioning(
-    request: Request,
-    tenant_id: str,
-    operator: Operator = Depends(current_operator),
-):
-    tenant = get_tenant(tenant_id)
-    form = await request.form()
-
-    site_mode = form.get("site_mode", "none")
-    site_spec = {
-        "mode": site_mode,
+def read_site_spec(form) -> dict:
+    """Parametres du site, communs aux deux routes qui les utilisent."""
+    return {
+        "mode": form.get("site_mode", "none"),
         "display_name": (form.get("site_display_name") or "").strip(),
         "path": (form.get("site_path") or "").strip(),
         "description": (form.get("site_description") or "").strip(),
@@ -114,6 +106,62 @@ async def start_provisioning(
         "folders": parse_shortcuts(form.get("site_folders", "")),
     }
 
+
+@router.post("/tenants/{tenant_id}/site")
+async def create_site_only(
+    request: Request,
+    tenant_id: str,
+    operator: Operator = Depends(current_operator),
+):
+    """Cree le site (et son arborescence) sans toucher aux utilisateurs.
+
+    Le bouton correspondant vit dans le meme formulaire que le provisionnement
+    et le soumet a cette route : les champs utilisateur sont simplement ignores.
+    """
+    tenant = get_tenant(tenant_id)
+    site_spec = read_site_spec(await request.form())
+
+    if site_spec["mode"] not in ("team", "communication"):
+        flash(
+            request,
+            "Choisissez « nouveau site d'equipe » ou « nouveau site de "
+            "communication » pour utiliser ce bouton.",
+            "error",
+        )
+        return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
+    if not site_spec["display_name"]:
+        flash(request, "Le nom du site est obligatoire.", "error")
+        return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
+
+    job_id = jobs.create_job(tenant_id, "creation du site", operator.username,
+                             {"site": site_spec})
+    db.audit(
+        operator.username,
+        "site.cree",
+        target=tenant_id,
+        detail={"job": job_id, "site": site_spec["display_name"],
+                "dossiers": len(site_spec["folders"])},
+    )
+
+    async def runner(ctx: jobs.JobContext) -> dict:
+        return await provisioning.run_site_creation(ctx, tenant, site_spec)
+
+    jobs.launch(job_id, tenant_id, operator.username, runner)
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
+@router.post("/tenants/{tenant_id}/provision")
+async def start_provisioning(
+    request: Request,
+    tenant_id: str,
+    operator: Operator = Depends(current_operator),
+):
+    tenant = get_tenant(tenant_id)
+    form = await request.form()
+
+    site_spec = read_site_spec(form)
+    site_mode = site_spec["mode"]
+
     # -- utilisateurs : lignes du tableau + collage en masse -----------------
     first_names = form.getlist("first_name")
     last_names = form.getlist("last_name")
@@ -123,6 +171,7 @@ async def start_provisioning(
     user_skus = form.getlist("user_sku")
     user_onedrives = form.getlist("user_onedrive")
     user_shortcuts = form.getlist("user_shortcuts")
+    user_domains = form.getlist("user_domain")
     user_vaults = form.getlist("user_vault")
     user_vault_names = form.getlist("user_vault_name")
 
@@ -154,6 +203,7 @@ async def start_provisioning(
                 "vault_name": (
                     user_vault_names[i] if i < len(user_vault_names) else ""
                 ).strip(),
+                "domain": (user_domains[i] if i < len(user_domains) else "").strip(),
             }
         )
     raw_users.extend(parse_bulk(form.get("bulk_users", "")))
@@ -199,18 +249,23 @@ async def start_provisioning(
         flash(request, f"Limite de {MAX_USERS} utilisateurs par traitement depassee.", "error")
         return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
 
-    domain = (form.get("user_domain") or tenant.get("default_domain") or "").strip()
-    if not domain:
-        flash(request, "Domaine des comptes introuvable : renseignez-le.", "error")
+    # Domaine de repli quand une fiche n'en designe pas (collage en masse).
+    fallback_domain = (tenant.get("default_domain") or "").strip()
+    if not fallback_domain and not all(r.get("domain") for r in raw_users):
+        flash(
+            request,
+            "Domaine des comptes inconnu : choisissez-le sur chaque fiche.",
+            "error",
+        )
         return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
 
-    usage_location = (form.get("usage_location") or "FR").strip().upper()[:2]
+    usage_location = "FR"
     force_change = form.get("force_change") == "on"
 
     # Licence retenue pour chaque ligne. Pour un nouveau compte, une ligne
     # laissee vide prend la licence par defaut du traitement ; « none » n'en
     # met aucune. Pour un compte existant, vide signifie « ne rien changer ».
-    default_ids, default_names = split_sku(form.get("default_sku", ""))
+    default_ids, default_names = split_sku(form.get("default_sku", ""))  # optionnel
 
     def resolve_skus(raw: dict) -> None:
         choice = raw.pop("sku_choice", "")
@@ -227,17 +282,18 @@ async def start_provisioning(
     for raw in raw_users:
         raw["force_change"] = force_change
         resolve_skus(raw)
-        spec_user = provisioning.normalize_user(raw, domain, usage_location)
+        row_domain = raw.pop("domain", "") or fallback_domain
+        spec_user = provisioning.normalize_user(raw, row_domain, usage_location)
         # Nom du coffre laisse vide : on le deduit ici, pour que le traitement
         # journalise et affiche exactement ce qui sera cree.
         if spec_user["vault_enabled"] and not spec_user["vault_name"]:
             spec_user["vault_name"] = provisioning.default_vault_name(
-                domain, spec_user["upn"]
+                row_domain, spec_user["upn"]
             )
         users.append(spec_user)
     for raw in picked:
         resolve_skus(raw)
-        users.append(provisioning.normalize_user(raw, domain, usage_location))
+        users.append(provisioning.normalize_user(raw, fallback_domain, usage_location))
 
     duplicates = {u["upn"] for u in users if [x["upn"] for x in users].count(u["upn"]) > 1}
     if duplicates:

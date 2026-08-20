@@ -122,6 +122,16 @@ d'environnement manquantes.
    ligne ou collage depuis Excel), les licences, puis lancer. Le journal
    s'affiche en direct et reste consultable ensuite.
 
+### Creer le site seul
+
+Le bouton **« Creer le site maintenant »**, dans la section SharePoint, cree le
+site et son arborescence **sans toucher aux utilisateurs**. Il soumet le meme
+formulaire a une autre route, qui ignore les champs utilisateur.
+
+C'est utile quand la creation du site et l'arrivee des utilisateurs ne se font
+pas le meme jour : on prepare l'espace documentaire, puis on revient plus tard
+provisionner les comptes en choisissant « site existant ».
+
 ### Dossiers d'un nouveau site
 
 Lors de la creation d'un site (equipe ou communication), un bloc « Dossiers a
@@ -143,9 +153,14 @@ traitement en bas. Les fiches s'empilent verticalement plutot que de s'etaler
 en colonnes, un tableau devenant illisible des que chaque ligne porte licence,
 OneDrive et raccourcis.
 
-L'adresse de connexion se construit sous les yeux de l'operateur (`prenom.nom`
-+ domaine du tenant) et se deduit du prenom et du nom tant qu'on ne l'a pas
-saisie a la main.
+L'adresse de connexion se construit sous les yeux de l'operateur : l'alias se
+deduit du prenom et du nom tant qu'on ne l'a pas saisi, et le **domaine se
+choisit sur chaque fiche** parmi les domaines verifies du tenant (le domaine
+par defaut vient en tete). Deux personnes d'un meme traitement peuvent donc
+relever de domaines differents.
+
+Il n'y a plus de reglage global : licence et domaine se decident fiche par
+fiche. Le pays (`usageLocation`) est fixe a `FR`.
 
 ### OneDrive et raccourcis, par utilisateur
 

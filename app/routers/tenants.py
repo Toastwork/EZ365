@@ -151,11 +151,18 @@ async def tenant_detail(
     tenant = get_tenant(tenant_id)
     skus: list[dict] = []
     sites: list[dict] = []
+    domains: list[str] = []
     graph_error = ""
     try:
         async with GraphClient(tenant_id) as graph:
             skus = [s for s in await graph.subscribed_skus() if s["appliesTo"] == "User"]
             sites = await graph.search_sites("*")
+            # Domaines verifies seulement : les autres refusent la creation
+            # d'un compte. Le domaine par defaut du tenant vient en tete.
+            raw_domains = await graph.domains()
+            verified = [d for d in raw_domains if d.get("isVerified")]
+            verified.sort(key=lambda d: (not d.get("isDefault"), d.get("id", "")))
+            domains = [d["id"] for d in verified if d.get("id")]
     except (GraphError, oauth.ConsentError) as exc:
         graph_error = getattr(exc, "friendly", str(exc))
         log.warning("Lecture du tenant %s impossible : %s", tenant_id, exc)
@@ -175,6 +182,7 @@ async def tenant_detail(
         {
             "tenant": tenant,
             "skus": skus,
+            "domains": domains or ([tenant["default_domain"]] if tenant.get("default_domain") else []),
             "sites": sorted(sites, key=lambda s: (s.get("displayName") or "")),
             "graph_error": graph_error,
             "vault_ready": vault_ready,

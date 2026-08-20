@@ -29,16 +29,17 @@ with TestClient(app) as client:
     # httpx encode les cles repetees a partir d'un dictionnaire de listes ;
     # une liste de tuples serait prise pour un flux binaire.
     form = {
-        "site_mode": "none", "user_domain": "c.fr", "usage_location": "FR",
+        "site_mode": "none",
         "site_folders": '["Compta","RH/Contrats"]',
-        "default_sku": "sku-std|BUSINESS_STANDARD",
+        # Le domaine se choisit desormais fiche par fiche.
+        "user_domain": ["c.fr", "autre.fr", "c.fr"],
         "first_name": ["Marie", "Jean", "Zoe"],
         "last_name": ["Dupont", "Martin", "Bernard"],
         "alias": ["", "", ""],
         "job_title": ["", "", ""],
         "department": ["", "", ""],
         # sans choix -> defaut | licence propre | explicitement aucune
-        "user_sku": ["", "sku-prem|BUSINESS_PREMIUM", "none"],
+        "user_sku": ["sku-std|BUSINESS_STANDARD", "sku-prem|BUSINESS_PREMIUM", "none"],
         # raccourcis : plusieurs dossiers pour Marie, aucun pour Jean
         "user_shortcuts": ['["Compta","RH/Contrats"]', "[]", '[""]'],
         "user_onedrive": ["1", "0", "0"],
@@ -68,10 +69,15 @@ with TestClient(app) as client:
     payload = jobs.job_payload(job_id)
     check("dossiers du site transmis",
           payload["site"]["folders"] == ["Compta", "RH/Contrats"], payload["site"])
-    check("licence par defaut appliquee",
+    check("licence de la fiche appliquee",
           users["marie.dupont@c.fr"]["sku_names"] == ["BUSINESS_STANDARD"], users["marie.dupont@c.fr"])
+    check("domaine choisi sur la 2e fiche",
+          "jean.martin@autre.fr" in users, sorted(users))
+    check("nom de coffre suit le domaine de la fiche",
+          users["jean.martin@autre.fr"]["vault_name"] == "AUTRE-OFFICE-JEAN.MARTIN",
+          users["jean.martin@autre.fr"]["vault_name"])
     check("licence propre a la ligne",
-          users["jean.martin@c.fr"]["sku_names"] == ["BUSINESS_PREMIUM"], users["jean.martin@c.fr"])
+          users["jean.martin@autre.fr"]["sku_names"] == ["BUSINESS_PREMIUM"], users["jean.martin@autre.fr"])
     check("« aucune » ecrase le defaut",
           users["zoe.bernard@c.fr"]["sku_ids"] == [], users["zoe.bernard@c.fr"])
     check("plusieurs raccourcis sur une ligne",
@@ -80,9 +86,9 @@ with TestClient(app) as client:
     check("un raccourci force le OneDrive",
           users["marie.dupont@c.fr"]["provision_onedrive"] is True, users["marie.dupont@c.fr"])
     check("ligne sans raccourci ni OneDrive",
-          users["jean.martin@c.fr"]["shortcut_folders"] == []
-          and users["jean.martin@c.fr"]["provision_onedrive"] is False,
-          users["jean.martin@c.fr"])
+          users["jean.martin@autre.fr"]["shortcut_folders"] == []
+          and users["jean.martin@autre.fr"]["provision_onedrive"] is False,
+          users["jean.martin@autre.fr"])
     check("raccourci sur la racine",
           users["zoe.bernard@c.fr"]["shortcut_folders"] == [""],
           users["zoe.bernard@c.fr"]["shortcut_folders"])
@@ -94,9 +100,6 @@ with TestClient(app) as client:
     check("nom de coffre impose respecte",
           users["marie.dupont@c.fr"]["vault_name"] == "SPECIAL-OFFICE-MD",
           users["marie.dupont@c.fr"]["vault_name"])
-    check("nom de coffre deduit du domaine",
-          users["jean.martin@c.fr"]["vault_name"] == "C-OFFICE-JEAN.MARTIN",
-          users["jean.martin@c.fr"]["vault_name"])
     check("depot refuse sur la 3e fiche",
           users["zoe.bernard@c.fr"]["vault_enabled"] is False, users["zoe.bernard@c.fr"])
     check("compte existant : pas de depot",
@@ -155,6 +158,42 @@ with TestClient(app) as client2:
     check("coffre indisponible : depot desactive",
           'name="user_vault" value="0"' in page and "coffre indisponible" in page,
           'name="user_vault" value="0"' in page)
+
+
+# --- bouton « Creer le site maintenant » ----------------------------------
+with TestClient(app) as client3:
+    client3.post("/login", data={"username": "testeur", "password": "motdepasse"})
+
+    # mode incompatible : refuse sans rien lancer
+    r = client3.post("/tenants/t1/site",
+                     data={"site_mode": "existing", "existing_site_id": "s1"},
+                     follow_redirects=False)
+    check("site existant : bouton refuse", "/jobs/" not in r.headers.get("location", ""),
+          r.headers.get("location"))
+
+    # nom manquant : refuse aussi
+    r = client3.post("/tenants/t1/site", data={"site_mode": "team"}, follow_redirects=False)
+    check("nom manquant : bouton refuse", "/jobs/" not in r.headers.get("location", ""),
+          r.headers.get("location"))
+
+    # cas nominal : un traitement dedie, sans utilisateur
+    r = client3.post("/tenants/t1/site", data={
+        "site_mode": "team",
+        "site_display_name": "Documents Client",
+        "site_path": "documents-client",
+        "site_folders": '["Compta","Compta/2026"]',
+        # champs utilisateur presents dans le meme formulaire : ignores
+        "first_name": ["Marie"], "last_name": ["Dupont"], "user_domain": ["c.fr"],
+    }, follow_redirects=False)
+    check("creation du site lancee", "/jobs/" in r.headers.get("location", ""),
+          r.headers.get("location"))
+    site_job = r.headers["location"].rsplit("/", 1)[1]
+    payload = jobs.job_payload(site_job)
+    check("aucun utilisateur dans ce traitement", "users" not in payload, list(payload))
+    check("dossiers transmis",
+          payload["site"]["folders"] == ["Compta", "Compta/2026"], payload["site"])
+    check("type de traitement distinct",
+          jobs.get_job(site_job)["kind"] == "creation du site", jobs.get_job(site_job)["kind"])
 
 print()
 print("ECHECS :", fails if fails else "aucun")

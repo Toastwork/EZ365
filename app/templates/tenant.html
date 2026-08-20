@@ -109,6 +109,18 @@
           raccourci sur les fiches utilisateur.
         </p>
       </div>
+
+      <div class="span-2 site-actions">
+        <button type="submit" class="btn btn-primary"
+                formaction="/tenants/{{ tenant.id }}/site" formnovalidate
+                onclick="return confirmSiteCreation();">
+          Creer le site maintenant
+        </button>
+        <span class="muted small">
+          Cree le site et ses dossiers sans toucher aux utilisateurs. Le
+          provisionnement ci-dessous reste disponible separement.
+        </span>
+      </div>
     </div>
 
     <div id="site-existing" class="hidden mt">
@@ -126,36 +138,13 @@
   <!-- ============ Utilisateurs ============ -->
   <section>
     <h3>2 · Utilisateurs</h3>
-    <div class="grid-2">
-      <div>
-        <label for="user_domain">Domaine des comptes</label>
-        <input id="user_domain" name="user_domain" value="{{ tenant.default_domain }}" required>
-      </div>
-      <div>
-        <label for="default_sku">Licence par defaut</label>
-        <select id="default_sku" name="default_sku">
-          <option value="">— aucune —</option>
-          {% for s in skus %}
-            <option value="{{ s.skuId }}|{{ s.skuPartNumber }}" {% if s.available == 0 %}disabled{% endif %}>
-              {{ s.skuPartNumber }} — {{ s.available }} dispo. / {{ s.enabled }}
-            </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label for="usage_location">Pays (usageLocation)</label>
-        <input id="usage_location" name="usage_location" value="FR" maxlength="2" required>
-      </div>
-      <div>
-        <label class="check mt-label">
-          <input type="checkbox" name="force_change" checked>
-          Changement du mot de passe a la 1re connexion
-        </label>
-      </div>
-    </div>
     {% if not skus %}
-      <p class="muted small mt">Aucune licence lisible sur ce tenant.</p>
+      <p class="muted small">Aucune licence lisible sur ce tenant.</p>
     {% endif %}
+    <label class="check">
+      <input type="checkbox" name="force_change" checked>
+      Changement du mot de passe a la 1re connexion
+    </label>
 
     <div id="users-list" class="mt">
       <div class="person-card">
@@ -177,14 +166,18 @@
             <label>Adresse de connexion</label>
             <div class="upn-row">
               <input name="alias" placeholder="prenom.nom">
-              <span class="upn-domain">@{{ tenant.default_domain }}</span>
+              <select name="user_domain" class="upn-domain" onchange="onDomainChange(this)">
+                {% for d in domains %}
+                  <option value="{{ d }}">@{{ d }}</option>
+                {% endfor %}
+                {% if not domains %}<option value="">@—</option>{% endif %}
+              </select>
             </div>
           </div>
           <div>
             <label>Licence</label>
             <select name="user_sku" class="sku-select">
-              <option value="">— licence par defaut —</option>
-              <option value="none">— aucune —</option>
+              <option value="none">— aucune licence —</option>
               {% for s in skus %}
                 <option value="{{ s.skuId }}|{{ s.skuPartNumber }}" {% if s.available == 0 %}disabled{% endif %}>
                   {{ s.skuPartNumber }} ({{ s.available }} dispo.)

@@ -557,6 +557,21 @@ async def store_in_vault(
 # ---------------------------------------------------------------------------
 # Orchestration complete
 # ---------------------------------------------------------------------------
+async def run_site_creation(ctx: JobContext, tenant: dict, site_spec: dict) -> dict:
+    """Cree le site et son arborescence, sans toucher aux utilisateurs."""
+    folders = site_spec.get("folders") or []
+    ctx.info(
+        "demarrage",
+        f"Creation d'un site sur {tenant.get('display_name') or tenant['id']} — "
+        f"{len(folders)} dossier(s) demande(s).",
+    )
+    async with GraphClient(tenant["id"]) as graph:
+        site = await ensure_site(ctx, graph, site_spec)
+        if site:
+            await create_site_folders(ctx, graph, site, folders)
+    return {"site": site, "users": [], "created": 0, "total": 0, "has_errors": False}
+
+
 async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
     site_spec = spec.get("site") or {"mode": "none"}
     user_specs = spec.get("users") or []
