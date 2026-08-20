@@ -109,16 +109,30 @@ diagnose_credentials() {
 # si BW_EMAIL est renseigne, on retombe sur une connexion e-mail + mot de passe
 # maitre, qui fonctionne tant qu'aucune double authentification n'est active.
 authenticate() {
-  if output="$(bw login --apikey 2>&1)"; then
-    return 0
-  fi
-  case "$output" in
-    *"already logged in"*|*"You are logged in"*)
-      log "La CLI signale une session deja ouverte, on continue."
-      return 0 ;;
-  esac
+  # Juste apres une remise a zero, « bw config server » vient de reecrire
+  # data.json : une connexion lancee dans la foulee peut lire un etat encore
+  # incomplet et echouer sur « Account does not exist » avec des identifiants
+  # pourtant valides. On reessaie donc une fois, apres une pause.
+  attempt=1
+  while [ "$attempt" -le 2 ]; do
+    if output="$(bw login --apikey 2>&1)"; then
+      [ "$attempt" -gt 1 ] && log "Authentification reussie a la 2e tentative."
+      return 0
+    fi
+    case "$output" in
+      *"already logged in"*|*"You are logged in"*)
+        log "La CLI signale une session deja ouverte, on continue."
+        return 0 ;;
+    esac
+    if [ "$attempt" -eq 1 ]; then
+      log "Authentification refusee : $output"
+      log "Nouvelle tentative dans 3 s (l'etat local vient d'etre reecrit)…"
+      sleep 3
+    fi
+    attempt=$((attempt + 1))
+  done
 
-  log "Authentification par cle API refusee : $output"
+  log "Authentification par cle API refusee apres 2 tentatives : $output"
 
   if [ -n "${BW_EMAIL:-}" ]; then
     log "Nouvelle tentative avec BW_EMAIL ($BW_EMAIL) et le mot de passe maitre…"

@@ -137,9 +137,12 @@ d'environnement manquantes.
   son mot de passe n'est pas modifie.
 - **Sidecar Bitwarden** : au demarrage, si la session stockee dans `/data`
   est perimee, le conteneur purge son etat local et se reauthentifie seul.
-  Si la cle API est refusee, il teste directement l'endpoint de jeton du
-  serveur et indique dans ses logs si la cle est en cause ou si le serveur
-  est injoignable.
+  La premiere connexion suivant cette purge peut echouer sur « Account does
+  not exist » alors que les identifiants sont bons : la CLI vient de reecrire
+  son `data.json`. Une seconde tentative est faite apres une pause. Si elle
+  echoue aussi, l'endpoint de jeton du serveur est interroge directement et
+  les logs indiquent si la cle est refusee (HTTP 400/401) ou si le serveur
+  est injoignable (000).
 
 ---
 
