@@ -31,10 +31,10 @@ let folderCache = [];
 
 function applyFolders() {
   document.querySelectorAll("select.folder-select").forEach(function (select) {
-    const chosen = select.value;
-    const placeholder = select.options[0];
+    // Les options marquees data-static survivent au rechargement de la liste.
+    const statics = Array.from(select.querySelectorAll("option[data-static]"));
     select.innerHTML = "";
-    select.appendChild(placeholder);
+    statics.forEach(function (option) { select.appendChild(option); });
     folderCache.forEach(function (folder) {
       const option = document.createElement("option");
       option.value = folder.path;
@@ -43,8 +43,68 @@ function applyFolders() {
       option.title = folder.path;
       select.appendChild(option);
     });
-    select.value = chosen; // conserve le choix si le dossier existe toujours
+    select.value = "";
   });
+}
+
+// ---------------------------------------------------------------------------
+// Raccourcis d'une ligne : plusieurs dossiers, portes par un champ JSON
+// ---------------------------------------------------------------------------
+function shortcutsOf(cell) {
+  const hidden = cell.querySelector("input[type=hidden]");
+  try { return JSON.parse(hidden.value || "[]"); } catch (err) { return []; }
+}
+
+function renderChips(cell) {
+  const list = shortcutsOf(cell);
+  const chips = cell.querySelector(".chips");
+  chips.innerHTML = "";
+  list.forEach(function (folder, index) {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    const label = document.createElement("span");
+    label.textContent = folder || "racine";
+    label.title = folder || "Bibliotheque entiere";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.onclick = function () {
+      const next = shortcutsOf(cell);
+      next.splice(index, 1);
+      cell.querySelector("input[type=hidden]").value = JSON.stringify(next);
+      renderChips(cell);
+    };
+    chip.appendChild(label);
+    chip.appendChild(remove);
+    chips.appendChild(chip);
+  });
+}
+
+function addShortcutChip(select) {
+  const value = select.value;
+  select.value = "";
+  if (!value) { return; }
+  const folder = value === "__root__" ? "" : value;
+  const cell = select.closest("td");
+  const list = shortcutsOf(cell);
+  if (list.indexOf(folder) !== -1) { return; }
+  list.push(folder);
+  cell.querySelector("input[type=hidden]").value = JSON.stringify(list);
+  renderChips(cell);
+
+  // Un raccourci suppose un OneDrive : on coche la case de la ligne.
+  const row = select.closest("tr");
+  const flag = row.querySelector("input[name$=_onedrive]");
+  if (flag && flag.value !== "1") {
+    flag.value = "1";
+    const box = row.querySelector("input[type=checkbox]");
+    if (box) { box.checked = true; }
+  }
+}
+
+function syncOnedrive(box) {
+  const hidden = box.closest("td").querySelector("input[type=hidden]");
+  hidden.value = box.checked ? "1" : "0";
 }
 
 async function loadFolders(siteId) {
@@ -199,11 +259,28 @@ function addExistingUser(user) {
   skuSelect.name = "existing_sku";
   cellSku.appendChild(skuSelect);
 
+  // OneDrive : decoche par defaut, un compte en place a souvent deja le sien.
+  const cellDrive = document.createElement("td");
+  cellDrive.className = "center";
+  cellDrive.innerHTML =
+    '<input type="hidden" name="existing_onedrive" value="0" data-default="0">' +
+    '<input type="checkbox" onchange="syncOnedrive(this)"' +
+    ' title="Provisionner le OneDrive de cette personne">';
+
   const cellFolder = document.createElement("td");
+  cellFolder.className = "shortcut-cell";
+  cellFolder.innerHTML =
+    '<input type="hidden" name="existing_shortcuts" value="[]" data-default="[]">' +
+    '<div class="chips"></div>';
   const folderSelect = document.createElement("select");
-  folderSelect.name = "existing_folder";
-  folderSelect.className = "folder-select";
-  folderSelect.appendChild(new Option("— dossier par defaut —", ""));
+  folderSelect.className = "folder-select shortcut-add";
+  folderSelect.onchange = function () { addShortcutChip(folderSelect); };
+  const placeholder = new Option("+ ajouter un raccourci…", "");
+  placeholder.dataset.static = "1";
+  const rootOption = new Option("Bibliotheque entiere (racine)", "__root__");
+  rootOption.dataset.static = "1";
+  folderSelect.appendChild(placeholder);
+  folderSelect.appendChild(rootOption);
   cellFolder.appendChild(folderSelect);
 
   const cellAction = document.createElement("td");
@@ -215,7 +292,7 @@ function addExistingUser(user) {
     }
   };
 
-  [cellUser, cellCurrent, cellSku, cellFolder, cellAction].forEach(function (cell) {
+  [cellUser, cellCurrent, cellSku, cellDrive, cellFolder, cellAction].forEach(function (cell) {
     row.appendChild(cell);
   });
   body.appendChild(row);
@@ -242,15 +319,23 @@ function addRow() {
   // Le clone reprend la liste de dossiers deja chargee dans la 1re ligne ;
   // seules les valeurs saisies sont remises a zero.
   const row = body.rows[0].cloneNode(true);
-  row.querySelectorAll("input").forEach(function (input) {
+  row.querySelectorAll("input:not([type=hidden]):not([type=checkbox])").forEach(function (input) {
     input.value = "";
     delete input.dataset.touched;
+  });
+  row.querySelectorAll("input[type=hidden]").forEach(function (hidden) {
+    hidden.value = hidden.dataset.default || "";
+  });
+  row.querySelectorAll("input[type=checkbox]").forEach(function (box) {
+    const hidden = box.closest("td").querySelector("input[type=hidden]");
+    box.checked = !hidden || hidden.value === "1";
   });
   row.querySelectorAll("select").forEach(function (select) {
     select.selectedIndex = 0;
   });
+  row.querySelectorAll(".chips").forEach(function (chips) { chips.innerHTML = ""; });
   body.appendChild(row);
-  row.querySelector("input").focus();
+  row.querySelector("input:not([type=hidden])").focus();
 }
 
 function removeRow(button) {
@@ -299,6 +384,12 @@ function confirmProvision(form) {
   const hasDefault = defaultSku && defaultSku.value;
   const perRow = Array.from(form.querySelectorAll("[name=user_sku]"))
     .filter(function (s) { return s.value && s.value !== "none"; }).length;
+  const shortcuts = Array.from(
+    form.querySelectorAll("[name=user_shortcuts], [name=existing_shortcuts]")
+  ).reduce(function (sum, field) {
+    try { return sum + JSON.parse(field.value || "[]").length; } catch (e) { return sum; }
+  }, 0);
+
   let message = total ? "Creer " + total + " utilisateur(s)" : "Aucun compte a creer";
   if (total) {
     message += (hasDefault || perRow)
@@ -307,6 +398,9 @@ function confirmProvision(form) {
   }
   if (existing) {
     message += ", traiter " + existing + " compte(s) deja existant(s)";
+  }
+  if (shortcuts) {
+    message += ", poser " + shortcuts + " raccourci(s)";
   }
   const mode = form.querySelector("input[name=site_mode]:checked").value;
   if (mode === "team" || mode === "communication") {

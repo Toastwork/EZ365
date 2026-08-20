@@ -38,12 +38,15 @@ with TestClient(app) as client:
         "department": ["", "", ""],
         # sans choix -> defaut | licence propre | explicitement aucune
         "user_sku": ["", "sku-prem|BUSINESS_PREMIUM", "none"],
-        "user_folder": ["Compta", "", "RH"],
+        # raccourcis : plusieurs dossiers pour Marie, aucun pour Jean
+        "user_shortcuts": ['["Compta","RH/Contrats"]', "[]", '[""]'],
+        "user_onedrive": ["1", "0", "0"],
         # comptes existants : l'un inchange, l'autre a qui on ajoute une licence
         "existing_upn": ["alice@c.fr", "bob@c.fr"],
         "existing_name": ["Alice", "Bob"],
         "existing_sku": ["", "sku-std|BUSINESS_STANDARD"],
-        "existing_folder": ["Direction", ""],
+        "existing_shortcuts": ['["Direction"]', "[]"],
+        "existing_onedrive": ["0", "1"],
     }
     r = client.post("/tenants/t1/provision", data=form, follow_redirects=False)
     check("traitement lance", r.status_code == 303 and "/jobs/" in r.headers["location"],
@@ -64,15 +67,38 @@ with TestClient(app) as client:
           users["jean.martin@c.fr"]["sku_names"] == ["BUSINESS_PREMIUM"], users["jean.martin@c.fr"])
     check("« aucune » ecrase le defaut",
           users["zoe.bernard@c.fr"]["sku_ids"] == [], users["zoe.bernard@c.fr"])
-    check("dossier par ligne conserve",
-          users["marie.dupont@c.fr"]["shortcut_folder"] == "Compta", users["marie.dupont@c.fr"])
+    check("plusieurs raccourcis sur une ligne",
+          users["marie.dupont@c.fr"]["shortcut_folders"] == ["Compta", "RH/Contrats"],
+          users["marie.dupont@c.fr"]["shortcut_folders"])
+    check("un raccourci force le OneDrive",
+          users["marie.dupont@c.fr"]["provision_onedrive"] is True, users["marie.dupont@c.fr"])
+    check("ligne sans raccourci ni OneDrive",
+          users["jean.martin@c.fr"]["shortcut_folders"] == []
+          and users["jean.martin@c.fr"]["provision_onedrive"] is False,
+          users["jean.martin@c.fr"])
+    check("raccourci sur la racine",
+          users["zoe.bernard@c.fr"]["shortcut_folders"] == [""],
+          users["zoe.bernard@c.fr"]["shortcut_folders"])
     check("existant sans choix : aucune licence, pas le defaut",
           users["alice@c.fr"]["sku_ids"] == [], users["alice@c.fr"])
     check("existant marque comme tel", users["alice@c.fr"]["existing_only"] is True, users["alice@c.fr"])
     check("existant avec licence demandee",
           users["bob@c.fr"]["sku_names"] == ["BUSINESS_STANDARD"], users["bob@c.fr"])
-    check("dossier de l'existant conserve",
-          users["alice@c.fr"]["shortcut_folder"] == "Direction", users["alice@c.fr"])
+    check("raccourci de l'existant conserve",
+          users["alice@c.fr"]["shortcut_folders"] == ["Direction"], users["alice@c.fr"])
+    check("OneDrive demande seul, sans raccourci",
+          users["bob@c.fr"]["provision_onedrive"] is True
+          and users["bob@c.fr"]["shortcut_folders"] == [], users["bob@c.fr"])
+
+
+from app.routers.provisioning import parse_shortcuts
+check("parse_shortcuts JSON", parse_shortcuts('["a","b/c"]') == ["a", "b/c"])
+check("parse_shortcuts racine", parse_shortcuts('[""]') == [""])
+check("parse_shortcuts vide", parse_shortcuts("") == [])
+check("parse_shortcuts doublons ecartes", parse_shortcuts('["a","a"]') == ["a"])
+check("parse_shortcuts slashs nettoyes", parse_shortcuts('["/a/b/"]') == ["a/b"])
+check("parse_shortcuts repli sur |", parse_shortcuts("a|b") == ["a", "b"])
+check("parse_shortcuts JSON non liste", parse_shortcuts('{"a":1}') == [])
 
 print()
 print("ECHECS :", fails if fails else "aucun")

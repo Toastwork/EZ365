@@ -206,3 +206,19 @@ textarea { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
 .table-scroll .table { min-width: 900px; }
 .table.compact select { padding: .3rem .35rem; font-size: .84rem; }
 .lic { margin: 0 .2rem .2rem 0; }
+
+/* ---------- raccourcis multiples par ligne ---------- */
+.shortcut-cell { min-width: 190px; }
+.chips { display: flex; flex-wrap: wrap; gap: .2rem; margin-bottom: .25rem; }
+.chip { display: inline-flex; align-items: center; gap: .25rem;
+        background: var(--ok-bg); color: var(--ok-fg);
+        border-radius: 999px; padding: .05rem .2rem .05rem .5rem;
+        font-size: .76rem; max-width: 100%; }
+.chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip button { border: none; background: none; color: inherit; cursor: pointer;
+               font-size: .95rem; line-height: 1; padding: 0 .25rem; opacity: .7; }
+.chip button:hover { opacity: 1; }
+.center { text-align: center; }
+.table.compact td.center input[type=checkbox] { margin: .35rem 0; }
+.shortcut-line { display: flex; gap: .35rem; align-items: baseline; margin-bottom: .15rem; }
+.shortcut-line .mono { font-size: .78rem; color: var(--muted); }

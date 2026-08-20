@@ -1,6 +1,7 @@
 """Formulaire de provisionnement, lancement et suivi des traitements."""
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
@@ -44,10 +45,37 @@ def parse_bulk(text: str) -> list[dict]:
                 "alias": parts[2],
                 "job_title": parts[3],
                 "department": parts[4],
-                "shortcut_folder": parts[5],
+                "shortcut_folders": [parts[5]] if parts[5] else [],
             }
         )
     return users
+
+
+def parse_shortcuts(value: str) -> list[str]:
+    """Decode la liste de dossiers d'une ligne du formulaire.
+
+    Le champ porte un tableau JSON : une ligne peut viser plusieurs dossiers,
+    ce qu'un champ repete ne saurait rattacher a son utilisateur puisque le
+    nombre varie d'une ligne a l'autre. Une chaine vide designe la racine.
+    """
+    value = (value or "").strip()
+    if not value:
+        return []
+    try:
+        decoded = json.loads(value)
+    except ValueError:
+        # Tolerance : liste separee par « | », caractere interdit dans les
+        # noms de dossier SharePoint.
+        decoded = value.split("|")
+    if not isinstance(decoded, list):
+        return []
+    folders, seen = [], set()
+    for item in decoded:
+        folder = str(item or "").strip().strip("/")
+        if folder not in seen:
+            seen.add(folder)
+            folders.append(folder)
+    return folders
 
 
 def split_sku(value: str) -> tuple[list[str], list[str]]:
@@ -81,8 +109,6 @@ async def start_provisioning(
         "public": form.get("site_public") == "on",
         "site_id": (form.get("existing_site_id") or "").strip(),
         "owner_upn": (form.get("site_owner_upn") or "").strip(),
-        "shortcut_label": (form.get("shortcut_label") or "").strip(),
-        "shortcut_folder": (form.get("shortcut_folder") or "").strip(),
     }
 
     # -- utilisateurs : lignes du tableau + collage en masse -----------------
@@ -91,8 +117,9 @@ async def start_provisioning(
     aliases = form.getlist("alias")
     job_titles = form.getlist("job_title")
     departments = form.getlist("department")
-    user_folders = form.getlist("user_folder")
     user_skus = form.getlist("user_sku")
+    user_onedrives = form.getlist("user_onedrive")
+    user_shortcuts = form.getlist("user_shortcuts")
 
     raw_users: list[dict] = []
     for i in range(len(first_names)):
@@ -108,10 +135,12 @@ async def start_provisioning(
                 "alias": alias,
                 "job_title": (job_titles[i] if i < len(job_titles) else "").strip(),
                 "department": (departments[i] if i < len(departments) else "").strip(),
-                # Vide = on retombe sur le dossier par defaut du traitement.
-                "shortcut_folder": (
-                    user_folders[i] if i < len(user_folders) else ""
-                ).strip(),
+                "shortcut_folders": parse_shortcuts(
+                    user_shortcuts[i] if i < len(user_shortcuts) else ""
+                ),
+                "provision_onedrive": (
+                    user_onedrives[i] if i < len(user_onedrives) else "0"
+                ) == "1",
                 # "" = licence par defaut du traitement, "none" = aucune.
                 "sku_choice": (user_skus[i] if i < len(user_skus) else "").strip(),
             }
@@ -124,7 +153,8 @@ async def start_provisioning(
     # designe une, pour ne pas en consommer par inadvertance.
     existing_upns = form.getlist("existing_upn")
     existing_names = form.getlist("existing_name")
-    existing_folders = form.getlist("existing_folder")
+    existing_shortcuts = form.getlist("existing_shortcuts")
+    existing_onedrives = form.getlist("existing_onedrive")
     existing_skus = form.getlist("existing_sku")
     picked: list[dict] = []
     for i, upn in enumerate(existing_upns):
@@ -137,9 +167,12 @@ async def start_provisioning(
                 "display_name": (
                     existing_names[i] if i < len(existing_names) else ""
                 ).strip(),
-                "shortcut_folder": (
-                    existing_folders[i] if i < len(existing_folders) else ""
-                ).strip(),
+                "shortcut_folders": parse_shortcuts(
+                    existing_shortcuts[i] if i < len(existing_shortcuts) else ""
+                ),
+                "provision_onedrive": (
+                    existing_onedrives[i] if i < len(existing_onedrives) else "0"
+                ) == "1",
                 "existing_only": True,
                 # Vide = on ne touche pas aux licences de ce compte.
                 "sku_choice": (
@@ -209,8 +242,6 @@ async def start_provisioning(
     spec = {
         "site": site_spec,
         "users": users,
-        "provision_onedrive": form.get("provision_onedrive") == "on",
-        "add_shortcut": form.get("add_shortcut") == "on",
         "vault": vault_spec,
     }
 

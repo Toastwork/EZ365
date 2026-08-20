@@ -122,20 +122,30 @@ d'environnement manquantes.
    ligne ou collage depuis Excel), les licences, puis lancer. Le journal
    s'affiche en direct et reste consultable ensuite.
 
-### Raccourcis par utilisateur
+### OneDrive et raccourcis, par utilisateur
 
-Quand un **site existant** est choisi, les dossiers de sa bibliotheque
-« Documents » sont lus et proposes en liste (deux niveaux de profondeur, 300
-dossiers au maximum). Chaque utilisateur peut alors recevoir le raccourci d'un
-dossier different : la colonne « Dossier raccourci » du tableau, ou la 6e
-colonne lors d'un collage en masse (`Prenom;Nom;alias;Fonction;Service;Dossier`).
+Il n'y a pas de reglage global : chaque ligne du tableau porte ses propres
+options, pour maitriser exactement ce qui est applique a qui.
 
-Les lignes laissees vides retombent sur le « dossier par defaut » du
-traitement ; si celui-ci est vide aussi, le raccourci vise la racine de la
-bibliotheque. Le raccourci prend le nom du dossier vise, sinon celui du site.
+* **OneDrive** — une case par ligne declenche (et attend) le provisionnement.
+  Cochee par defaut pour un nouveau compte, decochee pour un compte existant
+  qui a souvent deja le sien.
+* **Raccourcis** — chaque personne peut en recevoir **plusieurs**. Quand un
+  site existant est choisi, les dossiers de sa bibliotheque « Documents » sont
+  lus et proposes (deux niveaux, 300 dossiers au maximum) ; on les ajoute un a
+  un, ils s'affichent en pastilles, et « Bibliotheque entiere » vise la racine.
+  Demander un raccourci coche automatiquement la case OneDrive : sans OneDrive,
+  il n'y a nulle part ou le poser.
+
+Chaque raccourci prend le nom du dossier vise, ou celui du site pour la racine.
+Un raccourci deja en place est laisse tel quel, sans meme resoudre sa cible.
 
 Les cibles sont resolues une fois par dossier distinct : dix personnes pointant
-sur le meme dossier ne coutent qu'un aller-retour Graph.
+sur le meme dossier ne coutent qu'un aller-retour Graph. Le recapitulatif liste
+chaque raccourci avec son resultat, ligne par ligne.
+
+Le collage en masse accepte toujours un dossier unique en 6e colonne
+(`Prenom;Nom;alias;Fonction;Service;Dossier`) ; au-dela, passer par le tableau.
 
 ### Licences
 
@@ -161,7 +171,8 @@ Le tableau affiche les **licences dont ils disposent deja** (ou « sans
 licence »), lues avec la recherche en un seul appel Graph. La colonne
 « Licence a ajouter » reste sur « ne rien changer » par defaut : aucune licence
 ne leur est attribuee tant qu'on n'en designe pas une, pour ne pas en consommer
-par inadvertance.
+par inadvertance. Ils disposent des memes options OneDrive et raccourcis que
+les nouveaux comptes.
 
 ### Notes de fonctionnement
 

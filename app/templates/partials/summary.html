@@ -32,8 +32,16 @@
         <td class="small">{{ u.license_names | join(', ') if u.license_names else '—' }}</td>
         <td class="small">{{ u.onedrive }}</td>
         <td class="small">
-          {{ u.shortcut }}
-          {% if u.shortcut_target %}<div class="muted">{{ u.shortcut_target }}</div>{% endif %}
+          {% if u.shortcuts %}
+            {% for s in u.shortcuts %}
+              <div class="shortcut-line">
+                <span class="pill pill-{{ 'ok' if s.status == 'ajoute' else ('warn' if s.status == 'deja present' else 'ko') }}">{{ s.status }}</span>
+                <span class="mono">{{ s.folder }}</span>
+              </div>
+            {% endfor %}
+          {% else %}
+            {{ u.shortcut }}
+          {% endif %}
         </td>
         <td class="small">{{ u.vault }}</td>
       </tr>

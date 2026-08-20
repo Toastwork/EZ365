@@ -148,7 +148,8 @@
           <tr>
             <th>Prenom</th><th>Nom</th><th>Alias <span class="muted small">(avant @)</span></th>
             <th>Fonction</th><th>Service</th>
-            <th>Licence</th><th>Dossier raccourci</th><th></th>
+            <th>Licence</th><th title="Provisionner le OneDrive">OneDrive</th>
+            <th>Raccourcis</th><th></th>
           </tr>
         </thead>
         <tbody id="users-body">
@@ -169,9 +170,17 @@
                 {% endfor %}
               </select>
             </td>
-            <td>
-              <select name="user_folder" class="folder-select">
-                <option value="">— dossier par defaut —</option>
+            <td class="center">
+              <input type="hidden" name="user_onedrive" value="1" data-default="1">
+              <input type="checkbox" checked onchange="syncOnedrive(this)"
+                     title="Provisionner le OneDrive de cette personne">
+            </td>
+            <td class="shortcut-cell">
+              <input type="hidden" name="user_shortcuts" value="[]" data-default="[]">
+              <div class="chips"></div>
+              <select class="folder-select shortcut-add" onchange="addShortcutChip(this)">
+                <option value="" data-static="1">+ ajouter un raccourci…</option>
+                <option value="__root__" data-static="1">Bibliotheque entiere (racine)</option>
               </select>
             </td>
             <td><button type="button" class="btn btn-small" onclick="removeRow(this)">×</button></td>
@@ -199,7 +208,8 @@
           <thead>
             <tr>
               <th>Utilisateur retenu</th><th>Licences actuelles</th>
-              <th>Licence a ajouter</th><th>Dossier raccourci</th><th></th>
+              <th>Licence a ajouter</th><th title="Provisionner le OneDrive">OneDrive</th>
+              <th>Raccourcis</th><th></th>
             </tr>
           </thead>
           <tbody id="existing-body"></tbody>
@@ -214,34 +224,9 @@
     </details>
   </section>
 
-  <!-- ============ OneDrive & raccourcis ============ -->
-  <section>
-    <h3>3 · OneDrive et raccourcis</h3>
-    <label class="check"><input type="checkbox" name="provision_onedrive" checked>
-      Provisionner le OneDrive de chaque utilisateur
-      <span class="muted small">— necessite une licence, peut prendre plusieurs minutes</span>
-    </label>
-    <label class="check"><input type="checkbox" name="add_shortcut" checked>
-      Ajouter le raccourci du site dans chaque OneDrive
-    </label>
-    <div class="grid-2 mt">
-      <div>
-        <label for="shortcut_label">Nom du raccourci <span class="muted small">(si aucun dossier vise)</span></label>
-        <input id="shortcut_label" name="shortcut_label" placeholder="(nom du site par defaut)">
-      </div>
-      <div>
-        <label for="shortcut_folder">Dossier par defaut</label>
-        <select id="shortcut_folder" name="shortcut_folder" class="folder-select">
-          <option value="">— racine de la bibliotheque —</option>
-        </select>
-        <p class="muted small">Applique aux utilisateurs dont la colonne « Dossier raccourci » est vide.</p>
-      </div>
-    </div>
-  </section>
-
   <!-- ============ Coffre ============ -->
   <section>
-    <h3>4 · Depot dans Bitwarden</h3>
+    <h3>3 · Depot dans Bitwarden</h3>
     <label class="check">
       <input type="checkbox" name="vault_enabled" {% if vault_ready %}checked{% else %}disabled{% endif %}>
       Enregistrer chaque identifiant cree dans le coffre

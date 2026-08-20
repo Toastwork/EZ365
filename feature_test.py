@@ -20,11 +20,18 @@ def check(label, cond, got=None):
 
 # --- collage avec colonne dossier ----------------------------------------
 rows = parse_bulk("Marie;Dupont;marie.dupont;Comptable;Finance;Comptabilite/2026\nJean;Martin;j.martin;Tech;IT")
-check("6e colonne lue", rows[0]["shortcut_folder"] == "Comptabilite/2026", rows[0])
-check("colonne absente -> vide", rows[1]["shortcut_folder"] == "", rows[1])
+check("6e colonne lue", rows[0]["shortcut_folders"] == ["Comptabilite/2026"], rows[0])
+check("colonne absente -> aucun raccourci", rows[1]["shortcut_folders"] == [], rows[1])
 
-u = provisioning.normalize_user({"first_name": "Marie", "shortcut_folder": "/RH/Contrats/"}, "c.fr", "FR")
-check("dossier normalise sans slash", u["shortcut_folder"] == "RH/Contrats", u["shortcut_folder"])
+u = provisioning.normalize_user(
+    {"first_name": "Marie", "shortcut_folders": ["/RH/Contrats/", "Compta"]}, "c.fr", "FR")
+check("dossiers normalises sans slash",
+      u["shortcut_folders"] == ["RH/Contrats", "Compta"], u["shortcut_folders"])
+check("un raccourci implique le OneDrive", u["provision_onedrive"] is True, u)
+u2 = provisioning.normalize_user({"first_name": "Sans"}, "c.fr", "FR")
+check("sans raccourci ni demande : pas de OneDrive", u2["provision_onedrive"] is False, u2)
+u3 = provisioning.normalize_user({"first_name": "Seul", "provision_onedrive": True}, "c.fr", "FR")
+check("OneDrive seul possible", u3["provision_onedrive"] is True and u3["shortcut_folders"] == [], u3)
 
 # --- aplatissement de l'arborescence -------------------------------------
 TREE = {
@@ -60,7 +67,7 @@ async def tree_tests():
 
 asyncio.run(tree_tests())
 
-# --- raccourcis par utilisateur ------------------------------------------
+# --- raccourcis multiples par utilisateur --------------------------------
 class Ctx:
     def __init__(self): self.actor = "testeur"; self.msgs = []
     def info(self, s, m, d=None): self.msgs.append(("info", m))
@@ -69,8 +76,7 @@ class Ctx:
     def success(self, s, m, d=None): self.msgs.append(("success", m))
 
 async def shortcut_tests():
-    resolved = []
-    created = []
+    resolved, created = [], []
 
     async def fake_resolve(ctx, graph, site, folder):
         resolved.append(folder)
@@ -79,7 +85,7 @@ async def shortcut_tests():
         return {"driveId": "SITE", "itemId": "item-" + (folder or "root"), "name": "Documents"}
 
     async def fake_existing(graph, drive_id):
-        return set()
+        return {"dejala"} if drive_id == "DEJA" else set()
 
     async def fake_add(graph, user_drive, src_drive, item, name):
         created.append((user_drive, item, name))
@@ -90,30 +96,43 @@ async def shortcut_tests():
     sharepoint.add_shortcut = fake_add
 
     results = [
-        {"upn": "a@c.fr", "drive_id": "DA", "shortcut_folder": "Comptabilite", "errors": []},
-        {"upn": "b@c.fr", "drive_id": "DB", "shortcut_folder": "Comptabilite", "errors": []},
-        {"upn": "c@c.fr", "drive_id": "DC", "shortcut_folder": "RH/Contrats", "errors": []},
-        {"upn": "d@c.fr", "drive_id": "DD", "shortcut_folder": "", "errors": []},
-        {"upn": "e@c.fr", "drive_id": None, "shortcut_folder": "RH", "errors": []},
-        {"upn": "f@c.fr", "drive_id": "DF", "shortcut_folder": "Inconnu", "errors": []},
+        {"upn": "multi@c.fr", "drive_id": "DA", "errors": [],
+         "shortcut_folders": ["Compta", "RH/Contrats", ""]},
+        {"upn": "meme@c.fr", "drive_id": "DB", "errors": [], "shortcut_folders": ["Compta"]},
+        {"upn": "aucun@c.fr", "drive_id": "DC", "errors": [], "shortcut_folders": []},
+        {"upn": "sansdrive@c.fr", "drive_id": None, "errors": [], "shortcut_folders": ["RH"]},
+        {"upn": "partiel@c.fr", "drive_id": "DD", "errors": [],
+         "shortcut_folders": ["Compta", "Inconnu"]},
+        {"upn": "deja@c.fr", "drive_id": "DEJA", "errors": [], "shortcut_folders": ["Dejala"]},
     ]
     ctx = Ctx()
-    await provisioning.add_shortcuts(ctx, None, results, {"id": "S"}, "General", "Site client")
+    await provisioning.add_shortcuts(ctx, None, results, {"id": "S"}, "Site client")
 
+    check("3 raccourcis pour un meme utilisateur",
+          [c for c in created if c[0] == "DA"] == [
+              ("DA", "item-Compta", "Compta"),
+              ("DA", "item-RH/Contrats", "Contrats"),
+              ("DA", "item-root", "Site client")], [c for c in created if c[0] == "DA"])
+    check("racine libellee avec le nom du site",
+          results[0]["shortcuts"][2] == {"folder": "(racine)", "status": "ajoute"},
+          results[0]["shortcuts"])
+    check("statut agrege", results[0]["shortcut"] == "3 ajoute(s)", results[0]["shortcut"])
     check("une resolution par dossier distinct",
-          resolved == ["Comptabilite", "RH/Contrats", "General", "Inconnu"], resolved)
-    check("2 users memes dossier -> 1 seule resolution", resolved.count("Comptabilite") == 1, resolved)
-    check("libelle = nom du dossier vise",
-          [c[2] for c in created] == ["Comptabilite", "Comptabilite", "Contrats", "General"],
-          [c[2] for c in created])
-    check("cible differente par utilisateur",
-          created[0][1] == "item-Comptabilite" and created[2][1] == "item-RH/Contrats", created)
-    check("defaut applique si colonne vide", results[3]["shortcut_target"] == "General", results[3])
-    check("sans OneDrive -> non tente", results[4]["shortcut"] == "impossible (OneDrive absent)", results[4])
-    check("dossier introuvable -> signale", results[5]["shortcut"] == "cible introuvable" and results[5]["errors"], results[5])
+          resolved == ["Compta", "RH/Contrats", "", "Inconnu"], resolved)
+    check("aucune resolution pour un raccourci deja present",
+          "Dejala" not in resolved, resolved)
+    check("aucun raccourci demande", results[2]["shortcut"] == "non demande", results[2])
+    check("sans OneDrive : chaque dossier signale",
+          [d["status"] for d in results[3]["shortcuts"]] == ["OneDrive absent"], results[3])
+    check("echec partiel visible",
+          sorted(d["status"] for d in results[4]["shortcuts"]) == ["ajoute", "cible introuvable"],
+          results[4]["shortcuts"])
+    check("erreur remontee pour le dossier manquant", results[4]["errors"], results[4])
+    check("raccourci deja present non recree",
+          results[5]["shortcut"] == "deja presents" and not [c for c in created if c[0] == "DEJA"],
+          results[5])
 
 asyncio.run(shortcut_tests())
-
 
 # --- regression : le repli de slugify ne doit pas polluer les UPN ---------
 from app.msgraph.sharepoint import slugify as _slug
@@ -144,7 +163,7 @@ async def existing_only_tests():
     G.assigned = []
 
     spec_existing = provisioning.normalize_user(
-        {"upn": "deja@c.fr", "existing_only": True, "shortcut_folder": "RH"}, "c.fr", "FR")
+        {"upn": "deja@c.fr", "existing_only": True, "shortcut_folders": ["RH"]}, "c.fr", "FR")
     spec_new = provisioning.normalize_user(
         {"first_name": "Neo", "sku_ids": ["sku-1"], "sku_names": ["BUSINESS"]}, "c.fr", "FR")
 
@@ -162,7 +181,7 @@ async def existing_only_tests():
     check("libelles de licence portes par l'entree",
           res[1]["license_names"] == ["BUSINESS"], res[1]["license_names"])
     check("existant sans mot de passe", res[0]["password"] == "", res[0])
-    check("dossier conserve", res[0]["shortcut_folder"] == "RH", res[0])
+    check("dossiers conserves", res[0]["shortcut_folders"] == ["RH"], res[0])
 
     # compte disparu entre la selection et le lancement
     g2 = G(present=set())

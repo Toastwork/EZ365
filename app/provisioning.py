@@ -56,9 +56,15 @@ def normalize_user(raw: dict, domain: str, default_usage_location: str) -> dict:
         "usage_location": (raw.get("usage_location") or default_usage_location or "FR").upper()[:2],
         "password": (raw.get("password") or "").strip(),
         "force_change": bool(raw.get("force_change", True)),
-        # Dossier de la bibliotheque a raccourcir pour cette personne ;
-        # vide = dossier par defaut du traitement.
-        "shortcut_folder": (raw.get("shortcut_folder") or "").strip().strip("/"),
+        # Dossiers a raccourcir pour cette personne. Une chaine vide dans la
+        # liste designe la racine de la bibliotheque.
+        "shortcut_folders": [
+            (f or "").strip().strip("/") for f in (raw.get("shortcut_folders") or [])
+        ],
+        # Provisionner (et attendre) le OneDrive de cette personne. Demander un
+        # raccourci l'implique : il n'y a nulle part ou le poser sinon.
+        "provision_onedrive": bool(raw.get("provision_onedrive"))
+        or bool(raw.get("shortcut_folders")),
         # Compte choisi dans la liste des utilisateurs deja presents sur le
         # tenant : on ne doit jamais le creer, seulement l'utiliser.
         "existing_only": bool(raw.get("existing_only")),
@@ -162,9 +168,11 @@ async def create_users(
             "created": False,
             "existing": False,
             "licenses": [],
-            "onedrive": "en attente",
+            "onedrive": "en attente" if spec.get("provision_onedrive") else "non demande",
             "shortcut": "en attente",
-            "shortcut_folder": spec.get("shortcut_folder", ""),
+            "shortcut_folders": list(spec.get("shortcut_folders") or []),
+            "shortcuts": [],
+            "provision_onedrive": bool(spec.get("provision_onedrive")),
             "license_names": list(spec.get("sku_names") or []),
             "vault": "en attente",
             "errors": [],
@@ -258,8 +266,11 @@ async def create_users(
 # Etape 3 : OneDrive
 # ---------------------------------------------------------------------------
 async def provision_onedrives(ctx: JobContext, graph: GraphClient, results: list[dict]) -> None:
-    targets = [r for r in results if r.get("id")]
+    # Seuls les comptes pour lesquels l'operateur l'a demande — ou qui
+    # attendent un raccourci — passent par cette etape, la plus lente.
+    targets = [r for r in results if r.get("id") and r.get("provision_onedrive")]
     if not targets:
+        ctx.info("onedrive", "Aucun OneDrive a provisionner.")
         return
 
     ctx.info(
@@ -274,10 +285,13 @@ async def provision_onedrives(ctx: JobContext, graph: GraphClient, results: list
             log.debug("Amorce OneDrive %s : %s", entry["upn"], exc)
 
     pending = {e["upn"]: e for e in targets}
-    for attempt in range(1, ONEDRIVE_ATTEMPTS + 1):
+    for attempt in range(0, ONEDRIVE_ATTEMPTS + 1):
         if not pending:
             break
-        await asyncio.sleep(ONEDRIVE_DELAY)
+        # La 1re passe est immediate : un compte en place a deja son OneDrive,
+        # inutile de lui faire attendre un cycle complet.
+        if attempt:
+            await asyncio.sleep(ONEDRIVE_DELAY)
         for upn in list(pending):
             entry = pending[upn]
             try:
@@ -315,10 +329,9 @@ async def add_shortcuts(
     graph: GraphClient,
     results: list[dict],
     site: dict,
-    default_folder: str,
     default_label: str,
 ) -> None:
-    """Chaque utilisateur peut viser un dossier different de la bibliotheque.
+    """Pose les raccourcis demandes, un utilisateur pouvant en recevoir plusieurs.
 
     Les cibles sont resolues une seule fois par dossier : dix utilisateurs
     pointant sur « Comptabilite » ne declenchent qu'un aller-retour Graph.
@@ -331,37 +344,63 @@ async def add_shortcuts(
         return targets[folder]
 
     for entry in results:
+        folders = entry.get("shortcut_folders") or []
+        if not folders:
+            entry["shortcut"] = "non demande"
+            continue
+
         drive_id = entry.get("drive_id")
         if not drive_id:
             entry["shortcut"] = "impossible (OneDrive absent)"
+            entry["shortcuts"] = [
+                {"folder": f or "(racine)", "status": "OneDrive absent"} for f in folders
+            ]
             continue
 
-        folder = (entry.get("shortcut_folder") or default_folder or "").strip("/")
-        target = await target_for(folder)
-        if not target:
-            entry["shortcut"] = "cible introuvable"
-            entry["errors"].append(f"raccourci : dossier « {folder} » introuvable")
-            continue
+        # Lu une fois par utilisateur, puis tenu a jour au fil des ajouts.
+        existing = await sharepoint.existing_shortcut_names(graph, drive_id)
+        done: list[dict] = []
 
-        # Le raccourci prend le nom du dossier vise, sinon celui du site.
-        label = folder.rsplit("/", 1)[-1] if folder else default_label
-        entry["shortcut_target"] = folder or "(racine)"
+        for folder in folders:
+            # Le raccourci prend le nom du dossier vise, sinon celui du site.
+            label = folder.rsplit("/", 1)[-1] if folder else default_label
+            shown = folder or "(racine)"
 
-        try:
-            existing = await sharepoint.existing_shortcut_names(graph, drive_id)
+            # Verifie avant de resoudre la cible : un raccourci deja en place
+            # ne doit pas couter d'aller-retour Graph.
             if label.casefold() in existing:
-                entry["shortcut"] = "deja present"
+                done.append({"folder": shown, "status": "deja present"})
                 ctx.info("raccourcis", f"Raccourci « {label} » deja present chez {entry['upn']}")
                 continue
-            await sharepoint.add_shortcut(
-                graph, drive_id, target["driveId"], target["itemId"], label
-            )
-            entry["shortcut"] = "ajoute"
-            ctx.success("raccourcis", f"Raccourci « {label} » ajoute chez {entry['upn']}")
-        except (sharepoint.SharePointError, GraphError) as exc:
-            entry["shortcut"] = "echec"
-            entry["errors"].append(f"raccourci : {exc}")
-            ctx.warn("raccourcis", f"Raccourci impossible pour {entry['upn']} : {exc}")
+
+            target = await target_for(folder)
+            if not target:
+                done.append({"folder": shown, "status": "cible introuvable"})
+                entry["errors"].append(f"raccourci : dossier « {shown} » introuvable")
+                continue
+
+            try:
+                await sharepoint.add_shortcut(
+                    graph, drive_id, target["driveId"], target["itemId"], label
+                )
+                existing.add(label.casefold())
+                done.append({"folder": shown, "status": "ajoute"})
+                ctx.success("raccourcis", f"Raccourci « {label} » ajoute chez {entry['upn']}")
+            except (sharepoint.SharePointError, GraphError) as exc:
+                done.append({"folder": shown, "status": "echec"})
+                entry["errors"].append(f"raccourci « {shown} » : {exc}")
+                ctx.warn(
+                    "raccourcis", f"Raccourci « {label} » impossible pour {entry['upn']} : {exc}"
+                )
+
+        entry["shortcuts"] = done
+        statuses = {d["status"] for d in done}
+        if statuses == {"ajoute"}:
+            entry["shortcut"] = f"{len(done)} ajoute(s)"
+        elif statuses == {"deja present"}:
+            entry["shortcut"] = "deja presents"
+        else:
+            entry["shortcut"] = ", ".join(sorted(statuses))
 
 
 # ---------------------------------------------------------------------------
@@ -436,13 +475,13 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
     site_spec = spec.get("site") or {"mode": "none"}
     user_specs = spec.get("users") or []
     vault_spec = spec.get("vault") or {"enabled": False}
-    do_onedrive = bool(spec.get("provision_onedrive", True))
-    do_shortcut = bool(spec.get("add_shortcut", True))
 
+    wanted_shortcuts = sum(len(u.get("shortcut_folders") or []) for u in user_specs)
     ctx.info(
         "demarrage",
         f"Tenant {tenant.get('display_name') or tenant['id']} — "
-        f"{len(user_specs)} utilisateur(s), site : {site_spec.get('mode')}.",
+        f"{len(user_specs)} utilisateur(s), site : {site_spec.get('mode')}, "
+        f"{wanted_shortcuts} raccourci(s) demande(s).",
     )
 
     async with GraphClient(tenant["id"]) as graph:
@@ -450,24 +489,18 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
 
         results = await create_users(ctx, graph, user_specs, site)
 
-        if do_onedrive:
-            await provision_onedrives(ctx, graph, results)
-        else:
-            for entry in results:
-                entry["onedrive"] = "non demande"
+        await provision_onedrives(ctx, graph, results)
 
-        if do_shortcut and site:
-            default_label = site_spec.get("shortcut_label") or (
-                site_spec.get("display_name") or "Documents"
-            )
-            await add_shortcuts(
-                ctx,
-                graph,
-                results,
-                site,
-                site_spec.get("shortcut_folder", ""),
-                default_label,
-            )
+        if site:
+            default_label = site_spec.get("display_name") or "Documents"
+            await add_shortcuts(ctx, graph, results, site, default_label)
+        elif wanted_shortcuts:
+            for entry in results:
+                if entry.get("shortcut_folders"):
+                    entry["shortcut"] = "impossible (aucun site)"
+                    entry["errors"].append(
+                        "raccourci : aucun site n'a ete choisi pour ce traitement"
+                    )
         else:
             for entry in results:
                 entry["shortcut"] = "non demande"
