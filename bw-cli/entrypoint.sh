@@ -3,12 +3,15 @@
 # la Vault Management API sur 0.0.0.0:8087 pour le conteneur ez365.
 #
 # Le dossier /data est persistant : au 2e demarrage une session existe deja.
-# Deux pieges de la CLI en decoulent, et dictent la logique ci-dessous :
+# Plusieurs pieges de la CLI en decoulent, et dictent la logique ci-dessous :
 #   - « bw config server » refuse de s'executer tant qu'une session existe
 #     (« Logout required before server config update. ») ;
 #   - « bw login --check » renvoie un code non nul quand le coffre est
-#     verrouille, alors que le compte EST authentifie.
-# On se fie donc au champ `status` de « bw status », seul indicateur fiable :
+#     verrouille, alors que le compte EST authentifie ;
+#   - « bw logout » echoue lui aussi quand l'etat local est incoherent, sans
+#     rien effacer : on supprime donc data.json nous-memes ;
+#   - « bw serve » n'exploite pas BW_SESSION depuis l'environnement.
+# On se fie au champ `status` de « bw status », seul indicateur fiable :
 #   unauthenticated -> il faut se connecter
 #   locked / unlocked -> deja connecte, il ne reste qu'a deverrouiller.
 #
@@ -46,7 +49,8 @@ bw_status_field() {
   value="$(
     bw status 2>/dev/null \
       | tr ',' '\n' \
-      | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p" \
+      | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}//p" \
+      | sed 's/[",}].*//' \
       | head -n 1
   )"
   [ "$value" = "null" ] && value=""
@@ -85,7 +89,15 @@ diagnose_credentials() {
   command -v curl >/dev/null 2>&1 || return 0
   log "Diagnostic : appel direct de $BW_SERVER/identity/connect/token"
   code="$(
-    curl -sk -o /tmp/bw-diag.json -w '%{http_code}'       -X POST "$BW_SERVER/identity/connect/token"       -d grant_type=client_credentials       -d scope=api       -d "client_id=$BW_CLIENTID"       -d "client_secret=$BW_CLIENTSECRET"       -d deviceType=21       -d deviceIdentifier=ez365-diagnostic       -d deviceName=ez365 2>/dev/null || echo 000
+    curl -sk -o /tmp/bw-diag.json -w '%{http_code}' \
+      -X POST "$BW_SERVER/identity/connect/token" \
+      -d grant_type=client_credentials \
+      -d scope=api \
+      -d "client_id=$BW_CLIENTID" \
+      -d "client_secret=$BW_CLIENTSECRET" \
+      -d deviceType=21 \
+      -d deviceIdentifier=ez365-diagnostic \
+      -d deviceName=ez365 2>/dev/null || echo 000
   )"
   case "$code" in
     200)
@@ -233,4 +245,25 @@ log "Coffre deverrouille, demarrage de l'API sur 0.0.0.0:$PORT"
 # Le mot de passe maitre n'est plus necessaire une fois la session ouverte.
 unset BW_PASSWORD BW_CLIENTSECRET
 
-exec bw serve --hostname 0.0.0.0 --port "$PORT"
+# Verification differee : l'API peut demarrer tout en annoncant un coffre
+# verrouille. Le signaler ici evite d'avoir a le deduire du /healthz d'ez365.
+if command -v curl >/dev/null 2>&1; then
+  (
+    sleep 5
+    # Extraction sans retro-reference : on coupe avant, puis apres la valeur.
+    served="$(curl -s "http://127.0.0.1:$PORT/status" 2>/dev/null \
+      | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"//p' \
+      | sed 's/".*//' \
+      | head -n 1)"
+    case "$served" in
+      unlocked) log "Verification : API en ligne, coffre deverrouille." ;;
+      "")       log "Verification : aucune reponse sur le port $PORT." ;;
+      *)        log "Verification : l'API annonce un coffre « $served » — ez365 la considerera indisponible." ;;
+    esac
+  ) &
+fi
+
+# `bw serve` n'exploite pas BW_SESSION depuis l'environnement : sans --session
+# l'API demarre mais annonce un coffre « locked », et ez365 la considere
+# indisponible. On passe donc la cle explicitement.
+exec bw serve --hostname 0.0.0.0 --port "$PORT" --session "$BW_SESSION"
