@@ -170,6 +170,29 @@ accepte plusieurs, mais le formulaire n'en propose qu'une.
 
 Sans licence, pas de OneDrive — donc pas de raccourci.
 
+### Depot dans Bitwarden
+
+Le depot se decide **par utilisateur**, sur sa fiche, avec le nom de l'entree
+modifiable. Le nom par defaut suit `CLIENT-OFFICE-UTILISATEUR` :
+
+| Domaine du tenant | Nom propose pour `marie.dupont` |
+|---|---|
+| `acskm.fr` | `ACSKM-OFFICE-MARIE.DUPONT` |
+| `client.onmicrosoft.com` | `[CLIENT]-OFFICE-MARIE.DUPONT` |
+
+Un domaine en `.onmicrosoft.com` est le domaine technique du tenant : il ne
+nomme pas le client, le marqueur `[CLIENT]` reste donc en clair, a completer.
+Le nom se recalcule tant qu'on ne l'a pas saisi a la main, en suivant l'alias
+et le domaine.
+
+La destination (organisation et collection Bitwarden) reste reglee une fois
+pour toutes sur la fiche du client, en haut de page.
+
+Seuls les comptes **crees** peuvent etre deposes : EZ365 ne connait pas le mot
+de passe d'un compte deja en place. Si le coffre est injoignable au moment du
+traitement, les mots de passe generes sont affiches dans le recapitulatif pour
+etre repris a la main.
+
 ### Utilisateurs deja presents sur le tenant
 
 Le bloc « Ajouter des utilisateurs deja presents » recherche les comptes du

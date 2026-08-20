@@ -30,6 +30,32 @@ ONEDRIVE_DELAY = 15.0
 
 
 # ---------------------------------------------------------------------------
+# Nom des entrees deposees dans Bitwarden
+# ---------------------------------------------------------------------------
+ONMICROSOFT = ".onmicrosoft.com"
+CLIENT_PLACEHOLDER = "[CLIENT]"
+
+
+def vault_client_code(domain: str) -> str:
+    """Code client tire du domaine : « acskm.fr » -> « ACSKM ».
+
+    Un domaine en .onmicrosoft.com ne nomme pas le client (c'est le domaine
+    technique du tenant) : on laisse alors le marqueur [CLIENT] en clair, a
+    completer par l'operateur.
+    """
+    domain = (domain or "").strip().lower().lstrip("@")
+    if not domain or domain.endswith(ONMICROSOFT):
+        return CLIENT_PLACEHOLDER
+    return domain.split(".")[0].upper()
+
+
+def default_vault_name(domain: str, upn: str) -> str:
+    """Nom par defaut d'une entree de coffre : CLIENT-OFFICE-UTILISATEUR."""
+    local = (upn or "").split("@")[0].strip().upper()
+    return f"{vault_client_code(domain)}-OFFICE-{local}"
+
+
+# ---------------------------------------------------------------------------
 # Normalisation des donnees du formulaire
 # ---------------------------------------------------------------------------
 def normalize_user(raw: dict, domain: str, default_usage_location: str) -> dict:
@@ -72,6 +98,10 @@ def normalize_user(raw: dict, domain: str, default_usage_location: str) -> dict:
         # (choix de la ligne, sinon licence par defaut du traitement).
         "sku_ids": list(raw.get("sku_ids") or []),
         "sku_names": list(raw.get("sku_names") or []),
+        # Depot au coffre : uniquement pour un compte cree, dont on connait le
+        # mot de passe. Le nom est modifiable, sinon on le deduit du domaine.
+        "vault_enabled": bool(raw.get("vault_enabled")) and not raw.get("existing_only"),
+        "vault_name": (raw.get("vault_name") or "").strip(),
     }
 
 
@@ -173,6 +203,8 @@ async def create_users(
             "shortcut_folders": list(spec.get("shortcut_folders") or []),
             "shortcuts": [],
             "provision_onedrive": bool(spec.get("provision_onedrive")),
+            "vault_enabled": bool(spec.get("vault_enabled")),
+            "vault_name": spec.get("vault_name") or "",
             "license_names": list(spec.get("sku_names") or []),
             "vault": "en attente",
             "errors": [],
@@ -409,17 +441,24 @@ async def add_shortcuts(
 async def store_in_vault(
     ctx: JobContext, results: list[dict], tenant: dict, vault_spec: dict
 ) -> None:
-    if not vault_spec.get("enabled"):
-        for entry in results:
-            entry["vault"] = "desactive"
-        ctx.info("bitwarden", "Depot dans le coffre desactive pour ce traitement.")
+    wanted = [e for e in results if e.get("vault_enabled")]
+    for entry in results:
+        if not entry.get("vault_enabled"):
+            entry["vault"] = "non demande"
+    if not wanted:
+        ctx.info("bitwarden", "Aucun identifiant a deposer dans le coffre.")
         return
 
     ready, message = await bitwarden.is_ready()
     if not ready:
-        for entry in results:
+        for entry in wanted:
             entry["vault"] = "indisponible"
-        ctx.error("bitwarden", f"Coffre indisponible : {message}")
+            entry["password_shown"] = True
+        ctx.error(
+            "bitwarden",
+            f"Coffre indisponible : {message} — les mots de passe sont affiches "
+            "dans le recapitulatif, a mettre au coffre manuellement.",
+        )
         return
 
     org_id = vault_spec.get("organization_id") or None
@@ -427,13 +466,16 @@ async def store_in_vault(
     collection_ids = [collection_id] if collection_id else None
     client_name = tenant.get("display_name") or tenant.get("default_domain") or tenant["id"]
 
-    for entry in results:
+    for entry in wanted:
         if not entry.get("created"):
-            entry["vault"] = "ignore (compte existant)"
+            entry["vault"] = "ignore (compte non cree)"
             continue
         if not entry.get("password"):
             entry["vault"] = "ignore (pas de mot de passe)"
             continue
+        name = entry.get("vault_name") or default_vault_name(
+            entry["upn"].split("@")[-1], entry["upn"]
+        )
         try:
             notes = (
                 f"Compte Microsoft 365 cree par EZ365 le {db.now()}.\n"
@@ -441,7 +483,7 @@ async def store_in_vault(
                 f"Licences : {', '.join(entry.get('license_names') or []) or 'aucune'}"
             )
             await bitwarden.create_login(
-                name=f"M365 — {client_name} — {entry['display_name']}",
+                name=name,
                 username=entry["upn"],
                 password=entry["password"],
                 uri="https://portal.office.com",
@@ -454,8 +496,9 @@ async def store_in_vault(
                 ],
             )
             entry["vault"] = "enregistre"
+            entry["vault_name"] = name
             entry["password_shown"] = False
-            ctx.success("bitwarden", f"Identifiant de {entry['upn']} depose dans le coffre.")
+            ctx.success("bitwarden", f"« {name} » depose dans le coffre.")
         except bitwarden.VaultError as exc:
             entry["vault"] = "echec"
             entry["password_shown"] = True

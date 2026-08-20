@@ -41,6 +41,9 @@ with TestClient(app) as client:
         # raccourcis : plusieurs dossiers pour Marie, aucun pour Jean
         "user_shortcuts": ['["Compta","RH/Contrats"]', "[]", '[""]'],
         "user_onedrive": ["1", "0", "0"],
+        # coffre : nom impose | nom deduit par le serveur | pas de depot
+        "user_vault": ["1", "1", "0"],
+        "user_vault_name": ["SPECIAL-OFFICE-MD", "", ""],
         # comptes existants : l'un inchange, l'autre a qui on ajoute une licence
         "existing_upn": ["alice@c.fr", "bob@c.fr"],
         "existing_name": ["Alice", "Bob"],
@@ -84,6 +87,16 @@ with TestClient(app) as client:
     check("existant marque comme tel", users["alice@c.fr"]["existing_only"] is True, users["alice@c.fr"])
     check("existant avec licence demandee",
           users["bob@c.fr"]["sku_names"] == ["BUSINESS_STANDARD"], users["bob@c.fr"])
+    check("nom de coffre impose respecte",
+          users["marie.dupont@c.fr"]["vault_name"] == "SPECIAL-OFFICE-MD",
+          users["marie.dupont@c.fr"]["vault_name"])
+    check("nom de coffre deduit du domaine",
+          users["jean.martin@c.fr"]["vault_name"] == "C-OFFICE-JEAN.MARTIN",
+          users["jean.martin@c.fr"]["vault_name"])
+    check("depot refuse sur la 3e fiche",
+          users["zoe.bernard@c.fr"]["vault_enabled"] is False, users["zoe.bernard@c.fr"])
+    check("compte existant : pas de depot",
+          users["alice@c.fr"]["vault_enabled"] is False, users["alice@c.fr"])
     check("raccourci de l'existant conserve",
           users["alice@c.fr"]["shortcut_folders"] == ["Direction"], users["alice@c.fr"])
     check("OneDrive demande seul, sans raccourci",
@@ -99,6 +112,45 @@ check("parse_shortcuts doublons ecartes", parse_shortcuts('["a","a"]') == ["a"])
 check("parse_shortcuts slashs nettoyes", parse_shortcuts('["/a/b/"]') == ["a/b"])
 check("parse_shortcuts repli sur |", parse_shortcuts("a|b") == ["a", "b"])
 check("parse_shortcuts JSON non liste", parse_shortcuts('{"a":1}') == [])
+
+
+# --- rendu du bloc coffre selon la disponibilite du sidecar ---------------
+import app.vault.bitwarden as bw
+
+async def _ready():
+    return (True, "ok")
+
+async def _down():
+    return (False, "sidecar injoignable")
+
+# La fiche tenant enchaine sur la lecture des organisations : sans ces
+# doublures, l'echec de cet appel ferait retomber vault_ready a False.
+async def _orgs():
+    return []
+
+async def _collections(organization_id=None):
+    return []
+
+bw.organizations = _orgs
+bw.collections = _collections
+
+with TestClient(app) as client2:
+    client2.post("/login", data={"username": "testeur", "password": "motdepasse"})
+
+    bw.is_ready = _ready
+    page = client2.get("/tenants/t1").text
+    check("coffre disponible : depot coche par defaut",
+          'name="user_vault" value="1"' in page, 'name="user_vault" value="1"' in page)
+    vault_block = page.split("user_vault")[1][:400]
+    check("coffre disponible : case active",
+          "syncVault(this)" in page and "disabled" not in vault_block, vault_block[:80])
+    check("champ de nom present", 'name="user_vault_name"' in page)
+
+    bw.is_ready = _down
+    page = client2.get("/tenants/t1").text
+    check("coffre indisponible : depot desactive",
+          'name="user_vault" value="0"' in page and "coffre indisponible" in page,
+          'name="user_vault" value="0"' in page)
 
 print()
 print("ECHECS :", fails if fails else "aucun")

@@ -46,6 +46,7 @@ def parse_bulk(text: str) -> list[dict]:
                 "job_title": parts[3],
                 "department": parts[4],
                 "shortcut_folders": [parts[5]] if parts[5] else [],
+                "vault_enabled": True,
             }
         )
     return users
@@ -120,6 +121,8 @@ async def start_provisioning(
     user_skus = form.getlist("user_sku")
     user_onedrives = form.getlist("user_onedrive")
     user_shortcuts = form.getlist("user_shortcuts")
+    user_vaults = form.getlist("user_vault")
+    user_vault_names = form.getlist("user_vault_name")
 
     raw_users: list[dict] = []
     for i in range(len(first_names)):
@@ -143,6 +146,12 @@ async def start_provisioning(
                 ) == "1",
                 # "" = licence par defaut du traitement, "none" = aucune.
                 "sku_choice": (user_skus[i] if i < len(user_skus) else "").strip(),
+                "vault_enabled": (
+                    user_vaults[i] if i < len(user_vaults) else "0"
+                ) == "1",
+                "vault_name": (
+                    user_vault_names[i] if i < len(user_vault_names) else ""
+                ).strip(),
             }
         )
     raw_users.extend(parse_bulk(form.get("bulk_users", "")))
@@ -216,7 +225,14 @@ async def start_provisioning(
     for raw in raw_users:
         raw["force_change"] = force_change
         resolve_skus(raw)
-        users.append(provisioning.normalize_user(raw, domain, usage_location))
+        spec_user = provisioning.normalize_user(raw, domain, usage_location)
+        # Nom du coffre laisse vide : on le deduit ici, pour que le traitement
+        # journalise et affiche exactement ce qui sera cree.
+        if spec_user["vault_enabled"] and not spec_user["vault_name"]:
+            spec_user["vault_name"] = provisioning.default_vault_name(
+                domain, spec_user["upn"]
+            )
+        users.append(spec_user)
     for raw in picked:
         resolve_skus(raw)
         users.append(provisioning.normalize_user(raw, domain, usage_location))
@@ -232,7 +248,6 @@ async def start_provisioning(
         return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
 
     vault_spec = {
-        "enabled": form.get("vault_enabled") == "on",
         "organization_id": (form.get("vault_org_id") or tenant.get("vault_org_id") or "").strip(),
         "collection_id": (
             form.get("vault_collection_id") or tenant.get("vault_collection_id") or ""

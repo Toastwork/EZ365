@@ -102,10 +102,36 @@ function addShortcutChip(select) {
   }
 }
 
-function syncOnedrive(box) {
+// Une case a cocher non cochee n'est pas envoyee : chacune est doublee d'un
+// champ cache « 1 »/« 0 » qui, lui, garde sa place dans l'ordre des lignes.
+function syncFlag(box) {
   const scope = box.closest("label") || box.parentElement;
   const hidden = scope.querySelector("input[type=hidden]");
   if (hidden) { hidden.value = box.checked ? "1" : "0"; }
+}
+
+const syncOnedrive = syncFlag;
+const syncVault = syncFlag;
+
+// ---------------------------------------------------------------------------
+// Nom de l'entree Bitwarden : CLIENT-OFFICE-UTILISATEUR
+// ---------------------------------------------------------------------------
+function vaultClientCode(domain) {
+  const value = (domain || "").trim().toLowerCase().replace(/^@/, "");
+  // Le domaine technique .onmicrosoft.com ne nomme pas le client : on laisse
+  // le marqueur a completer.
+  if (!value || value.endsWith(".onmicrosoft.com")) { return "[CLIENT]"; }
+  return value.split(".")[0].toUpperCase();
+}
+
+function refreshVaultName(card) {
+  const field = card.querySelector(".vault-name");
+  if (!field || field.dataset.touched) { return; }
+  const aliasField = card.querySelector("input[name=alias]");
+  const alias = (aliasField && aliasField.value.trim()) || "";
+  const domainField = document.getElementById("user_domain");
+  const domain = (domainField && domainField.value) || "";
+  field.value = alias ? vaultClientCode(domain) + "-OFFICE-" + alias.toUpperCase() : "";
 }
 
 async function loadFolders(siteId) {
@@ -323,7 +349,12 @@ function addExistingUser(user) {
   shortcuts.appendChild(folderSelect);
   foot.appendChild(shortcuts);
 
-  [head, current, grid, foot].forEach(function (block) { card.appendChild(block); });
+  const note = document.createElement("p");
+  note.className = "muted small person-vault-note";
+  note.textContent = "Compte existant : aucun identifiant a deposer au coffre "
+                   + "(son mot de passe n'est pas connu d'EZ365).";
+
+  [head, current, grid, foot, note].forEach(function (block) { card.appendChild(block); });
   container.appendChild(card);
   document.getElementById("existing-table").classList.remove("hidden");
   applyFolders();
@@ -342,6 +373,7 @@ function suggestAlias(input) {
   const first = slug(card.querySelector("input[name=first_name]").value);
   const last = slug(card.querySelector("input[name=last_name]").value);
   alias.value = [first, last].filter(Boolean).join(".");
+  refreshVaultName(card);
 }
 
 function addRow() {
@@ -365,6 +397,7 @@ function addRow() {
   card.querySelectorAll(".chips").forEach(function (chips) { chips.innerHTML = ""; });
   list.appendChild(card);
   renumberCards();
+  refreshVaultName(card);
   card.querySelector("input:not([type=hidden])").focus();
 }
 
@@ -461,8 +494,13 @@ function confirmProvision(form) {
 // Un champ rempli a la main ne doit plus etre ecrase par les suggestions.
 document.addEventListener("input", function (event) {
   const target = event.target;
-  if (target.name === "alias" || target.id === "site_path") {
+  if (target.name === "alias" || target.id === "site_path"
+      || target.classList.contains("vault-name")) {
     target.dataset.touched = "1";
+  }
+  if (target.name === "alias") {
+    const card = target.closest(".person-card");
+    if (card) { refreshVaultName(card); }
   }
 });
 
@@ -472,6 +510,7 @@ function refreshDomain() {
   document.querySelectorAll(".upn-domain").forEach(function (span) {
     span.textContent = domain ? "@" + domain : "@…";
   });
+  document.querySelectorAll("#users-list .person-card").forEach(refreshVaultName);
 }
 
 document.addEventListener("DOMContentLoaded", function () {

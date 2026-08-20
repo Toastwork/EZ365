@@ -266,3 +266,19 @@ textarea { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
   .person-foot { grid-template-columns: 1fr; }
   .person-foot .check { margin-top: 0; }
 }
+
+/* ---------- depot au coffre, par fiche ---------- */
+.person-vault {
+  display: grid; grid-template-columns: minmax(200px, 1fr) 2fr; gap: .9rem;
+  align-items: start; margin-top: .8rem; padding-top: .8rem;
+  border-top: 1px solid var(--border);
+}
+.person-vault .check { margin-top: 1.4rem; }
+.vault-name { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
+.person-vault-note { margin: .8rem 0 0; padding-top: .8rem;
+                     border-top: 1px solid var(--border); }
+
+@media (max-width: 760px) {
+  .person-vault { grid-template-columns: 1fr; }
+  .person-vault .check { margin-top: 0; }
+}

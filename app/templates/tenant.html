@@ -203,6 +203,21 @@
             </select>
           </div>
         </div>
+
+        <div class="person-vault">
+          <label class="check">
+            <input type="hidden" name="user_vault" value="{{ '1' if vault_ready else '0' }}"
+                   data-default="{{ '1' if vault_ready else '0' }}">
+            <input type="checkbox" {% if vault_ready %}checked{% else %}disabled{% endif %}
+                   onchange="syncVault(this)">
+            Deposer l'identifiant dans Bitwarden
+            {% if not vault_ready %}<span class="muted small">— coffre indisponible</span>{% endif %}
+          </label>
+          <div class="vault-name-field">
+            <label>Nom de l'entree</label>
+            <input name="user_vault_name" class="vault-name" placeholder="CLIENT-OFFICE-UTILISATEUR">
+          </div>
+        </div>
       </div>
     </div>
     <button type="button" class="btn" onclick="addRow()">+ Ajouter un utilisateur</button>
@@ -230,23 +245,6 @@
       <p class="muted small mt">Une ligne par personne : <code>Prenom;Nom;alias;Fonction;Service;Dossier</code>. Tabulations et virgules acceptees ; la derniere colonne est facultative.</p>
       <textarea name="bulk_users" rows="5" placeholder="Marie;Dupont;marie.dupont;Comptable;Finance;Comptabilite"></textarea>
     </details>
-  </section>
-
-  <!-- ============ Coffre ============ -->
-  <section>
-    <h3>3 · Depot dans Bitwarden</h3>
-    <label class="check">
-      <input type="checkbox" name="vault_enabled" {% if vault_ready %}checked{% else %}disabled{% endif %}>
-      Enregistrer chaque identifiant cree dans le coffre
-      {% if not vault_ready %}<span class="muted small">— indisponible : {{ vault_message }}</span>{% endif %}
-    </label>
-    {% if vault_ready %}
-    <p class="muted small mt">
-      Destination : {{ tenant.vault_org_id and 'organisation configuree' or 'coffre personnel' }}
-      {% if tenant.vault_collection_id %}, collection configuree{% endif %}.
-      Modifiable dans « Destination Bitwarden » ci-dessus.
-    </p>
-    {% endif %}
   </section>
 
   <div class="actions">

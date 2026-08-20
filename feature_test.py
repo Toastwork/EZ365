@@ -201,6 +201,75 @@ async def existing_only_tests():
 
 asyncio.run(existing_only_tests())
 
+# --- nom des entrees de coffre -------------------------------------------
+from app.provisioning import default_vault_name, vault_client_code
+check("code client depuis le domaine", vault_client_code("acskm.fr") == "ACSKM", vault_client_code("acskm.fr"))
+check("sous-domaine : 1er label", vault_client_code("Sous.Domaine.FR") == "SOUS", vault_client_code("Sous.Domaine.FR"))
+check("onmicrosoft -> marqueur",
+      vault_client_code("client.onmicrosoft.com") == "[CLIENT]", vault_client_code("client.onmicrosoft.com"))
+check("domaine vide -> marqueur", vault_client_code("") == "[CLIENT]", vault_client_code(""))
+check("nom complet",
+      default_vault_name("acskm.fr", "marie.dupont@acskm.fr") == "ACSKM-OFFICE-MARIE.DUPONT",
+      default_vault_name("acskm.fr", "marie.dupont@acskm.fr"))
+check("nom avec marqueur",
+      default_vault_name("x.onmicrosoft.com", "jean@x.onmicrosoft.com") == "[CLIENT]-OFFICE-JEAN",
+      default_vault_name("x.onmicrosoft.com", "jean@x.onmicrosoft.com"))
+
+u_vault = provisioning.normalize_user(
+    {"first_name": "Marie", "vault_enabled": True, "vault_name": " ACSKM-OFFICE-MD "}, "c.fr", "FR")
+check("nom du coffre conserve et nettoye", u_vault["vault_name"] == "ACSKM-OFFICE-MD", u_vault)
+u_novault = provisioning.normalize_user(
+    {"upn": "x@c.fr", "existing_only": True, "vault_enabled": True}, "c.fr", "FR")
+check("compte existant : jamais de depot", u_novault["vault_enabled"] is False, u_novault)
+
+# --- depot au coffre, par utilisateur ------------------------------------
+async def vault_tests():
+    from app.vault import bitwarden as bw
+    posted = []
+
+    async def fake_ready():
+        return (True, "ok")
+
+    async def fake_create(**kwargs):
+        posted.append(kwargs)
+        return {"id": "1"}
+
+    bw.is_ready = fake_ready
+    bw.create_login = fake_create
+
+    results = [
+        {"upn": "a@c.fr", "created": True, "password": "P1", "vault_enabled": True,
+         "vault_name": "ACSKM-OFFICE-A", "license_names": [], "errors": []},
+        {"upn": "b@c.fr", "created": True, "password": "P2", "vault_enabled": False,
+         "vault_name": "", "license_names": [], "errors": []},
+        {"upn": "c@c.fr", "created": False, "password": "", "vault_enabled": True,
+         "vault_name": "ACSKM-OFFICE-C", "license_names": [], "errors": []},
+        {"upn": "d@c.fr", "created": True, "password": "P4", "vault_enabled": True,
+         "vault_name": "", "license_names": [], "errors": []},
+    ]
+    ctx = Ctx()
+    await provisioning.store_in_vault(ctx, results, {"id": "t", "display_name": "Client"}, {})
+
+    check("seuls les comptes demandes sont deposes",
+          [p["name"] for p in posted] == ["ACSKM-OFFICE-A", "C-OFFICE-D"], [p["name"] for p in posted])
+    check("depot non demande signale", results[1]["vault"] == "non demande", results[1]["vault"])
+    check("compte non cree ignore", results[2]["vault"] == "ignore (compte non cree)", results[2]["vault"])
+    check("nom retenu memorise", results[0]["vault_name"] == "ACSKM-OFFICE-A", results[0])
+    check("mot de passe non affiche apres depot",
+          results[0]["password_shown"] is False, results[0])
+
+    # coffre indisponible : les mots de passe doivent rester visibles
+    async def fake_down():
+        return (False, "sidecar injoignable")
+    bw.is_ready = fake_down
+    down = [{"upn": "e@c.fr", "created": True, "password": "P5", "vault_enabled": True,
+             "vault_name": "N", "license_names": [], "errors": []}]
+    await provisioning.store_in_vault(Ctx(), down, {"id": "t"}, {})
+    check("coffre indisponible : mot de passe conserve a l'affichage",
+          down[0]["vault"] == "indisponible" and down[0]["password_shown"] is True, down[0])
+
+asyncio.run(vault_tests())
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)
