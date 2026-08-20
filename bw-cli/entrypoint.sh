@@ -77,8 +77,37 @@ set_server() {
   fatal "Configuration du serveur impossible meme apres remise a zero. Verifiez que le volume /data de ce conteneur est accessible en ecriture." "$output"
 }
 
-# Authentifie le compte de service par cle API (BW_CLIENTID / BW_CLIENTSECRET,
-# lus directement dans l'environnement par la CLI).
+# Interroge directement l'endpoint de jeton du serveur pour savoir si la cle
+# API est en cause ou si le probleme est ailleurs. N'est appele qu'en cas
+# d'echec : la reponse n'est journalisee que lorsqu'elle ne contient pas de
+# jeton.
+diagnose_credentials() {
+  command -v curl >/dev/null 2>&1 || return 0
+  log "Diagnostic : appel direct de $BW_SERVER/identity/connect/token"
+  code="$(
+    curl -sk -o /tmp/bw-diag.json -w '%{http_code}'       -X POST "$BW_SERVER/identity/connect/token"       -d grant_type=client_credentials       -d scope=api       -d "client_id=$BW_CLIENTID"       -d "client_secret=$BW_CLIENTSECRET"       -d deviceType=21       -d deviceIdentifier=ez365-diagnostic       -d deviceName=ez365 2>/dev/null || echo 000
+  )"
+  case "$code" in
+    200)
+      log "  -> HTTP 200 : la cle API est acceptee. Le blocage vient d'ailleurs." ;;
+    400|401)
+      log "  -> HTTP $code : la cle API est refusee par le serveur."
+      log "     Regenerez-la dans Vaultwarden (parametres du compte > cle API)"
+      log "     puis mettez a jour BW_CLIENTID et BW_CLIENTSECRET dans la stack."
+      log "     Reponse : $(head -c 300 /tmp/bw-diag.json 2>/dev/null)" ;;
+    000)
+      log "  -> $BW_SERVER injoignable depuis ce conteneur (DNS, port ou TLS)." ;;
+    *)
+      log "  -> HTTP $code inattendu."
+      log "     Reponse : $(head -c 300 /tmp/bw-diag.json 2>/dev/null)" ;;
+  esac
+  rm -f /tmp/bw-diag.json
+}
+
+# Authentifie le compte de service. La cle API (BW_CLIENTID / BW_CLIENTSECRET,
+# lues directement dans l'environnement par la CLI) est la methode principale ;
+# si BW_EMAIL est renseigne, on retombe sur une connexion e-mail + mot de passe
+# maitre, qui fonctionne tant qu'aucune double authentification n'est active.
 authenticate() {
   if output="$(bw login --apikey 2>&1)"; then
     return 0
@@ -88,7 +117,29 @@ authenticate() {
       log "La CLI signale une session deja ouverte, on continue."
       return 0 ;;
   esac
-  fatal "Authentification refusee. Verifiez BW_CLIENTID et BW_CLIENTSECRET (cle API du compte de service Bitwarden)." "$output"
+
+  log "Authentification par cle API refusee : $output"
+
+  if [ -n "${BW_EMAIL:-}" ]; then
+    log "Nouvelle tentative avec BW_EMAIL ($BW_EMAIL) et le mot de passe maitre…"
+    if fallback="$(bw login "$BW_EMAIL" --passwordenv BW_PASSWORD 2>&1)"; then
+      log "Authentification par e-mail reussie."
+      return 0
+    fi
+    log "Authentification par e-mail refusee : $fallback"
+  fi
+
+  case "$output" in
+    *"Account does not exist"*)
+      log "« Account does not exist » : le serveur ne connait pas ce compte."
+      log "Causes usuelles — cle API d'un autre serveur Vaultwarden, compte"
+      log "supprime/recree, ou BW_SERVER qui ne pointe pas sur l'instance"
+      log "hebergeant le compte de service."
+      [ -n "${BW_EMAIL:-}" ] || log "Astuce : renseignez BW_EMAIL pour tenter une connexion e-mail + mot de passe." ;;
+  esac
+
+  diagnose_credentials
+  fatal "Authentification impossible aupres de $BW_SERVER." "$output"
 }
 
 # ---------------------------------------------------------------------------

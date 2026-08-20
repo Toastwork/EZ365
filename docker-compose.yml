@@ -45,6 +45,9 @@ services:
       # NODE_EXTRA_CA_CERTS: "/certs/ca-acskm.crt"
       BW_CLIENTID: "${BW_CLIENTID}"
       BW_CLIENTSECRET: "${BW_CLIENTSECRET}"
+      # Repli facultatif : si la cle API est refusee, connexion par
+      # e-mail + mot de passe maitre (impossible si une 2FA est active).
+      BW_EMAIL: "${BW_EMAIL:-}"
       BW_PASSWORD: "${BW_PASSWORD}"
     volumes:
       - /home/administrateur/data/ez365/bw-cli:/data

@@ -74,6 +74,7 @@ existant — aucune variable n'a ete renommee.
 | `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_REDIRECT_URI` | application Entra ID multi-tenant |
 | `VAULT_ENABLED`, `VAULT_API_URL` | sidecar Bitwarden |
 | `BW_SERVER`, `BW_CLIENTID`, `BW_CLIENTSECRET`, `BW_PASSWORD` | sur le conteneur `bw-cli` uniquement |
+| `BW_EMAIL` | facultatif : repli e-mail + mot de passe maitre si la cle API est refusee |
 
 Generer une cle de stockage :
 
@@ -134,6 +135,11 @@ d'environnement manquantes.
   depot dans Bitwarden a echoue. Sinon le coffre est la seule source.
 - **Comptes existants** : un UPN deja present est reutilise, jamais ecrase ;
   son mot de passe n'est pas modifie.
+- **Sidecar Bitwarden** : au demarrage, si la session stockee dans `/data`
+  est perimee, le conteneur purge son etat local et se reauthentifie seul.
+  Si la cle API est refusee, il teste directement l'endpoint de jeton du
+  serveur et indique dans ses logs si la cle est en cause ou si le serveur
+  est injoignable.
 
 ---
 

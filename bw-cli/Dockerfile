@@ -5,7 +5,7 @@ ENV BITWARDENCLI_APPDATA_DIR=/data \
     NODE_ENV=production
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
  && rm -rf /var/lib/apt/lists/* \
  && npm install -g @bitwarden/cli@2024.12.0 \
  && npm cache clean --force
