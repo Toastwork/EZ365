@@ -53,18 +53,28 @@ bw_status_field() {
   printf '%s' "$value"
 }
 
-# Configure le serveur, en se deconnectant d'abord si la CLI l'exige.
+# Remet la CLI a zero. `bw logout` echoue quand l'etat local est incoherent
+# (la CLI se croit connectee pour refuser « config server », mais pas assez
+# pour se deconnecter) : on supprime donc nous-memes data.json, qui est le seul
+# endroit ou la CLI garde serveur, compte et jetons. Rien d'irremplacable n'y
+# reside, le coffre vit sur le serveur.
+reset_local_state() {
+  log "Remise a zero de l'etat local de la CLI ($BITWARDENCLI_APPDATA_DIR)."
+  bw logout >/dev/null 2>&1 || true
+  rm -f "$BITWARDENCLI_APPDATA_DIR/data.json" "$BITWARDENCLI_APPDATA_DIR/data.json.lock"
+}
+
+# Configure le serveur, en repartant d'un etat propre si la CLI l'exige.
 set_server() {
   if output="$(bw config server "$BW_SERVER" 2>&1)"; then
     return 0
   fi
   log "« bw config server » a echoue : $output"
-  log "Nouvelle tentative apres deconnexion de la session locale."
-  bw logout >/dev/null 2>&1 || true
+  reset_local_state
   if output="$(bw config server "$BW_SERVER" 2>&1)"; then
     return 0
   fi
-  fatal "Configuration du serveur impossible. Videz le volume /data de ce conteneur (ez365-bw-cli) puis relancez-le." "$output"
+  fatal "Configuration du serveur impossible meme apres remise a zero. Verifiez que le volume /data de ce conteneur est accessible en ecriture." "$output"
 }
 
 # Authentifie le compte de service par cle API (BW_CLIENTID / BW_CLIENTSECRET,
@@ -131,7 +141,9 @@ if ! BW_SESSION="$(bw unlock --passwordenv BW_PASSWORD --raw 2>&1)"; then
   case "$BW_SESSION" in
     *"not logged in"*)
       log "Session locale perimee malgre l'etat « $current_status » : reauthentification."
-      bw logout >/dev/null 2>&1 || true
+      # La purge est indispensable : sans elle, « config server » et
+      # « login --apikey » se heurtent tous deux a la session fantome.
+      reset_local_state
       set_server
       authenticate
       if ! BW_SESSION="$(bw unlock --passwordenv BW_PASSWORD --raw 2>&1)"; then
