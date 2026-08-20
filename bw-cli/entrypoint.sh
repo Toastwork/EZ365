@@ -67,6 +67,20 @@ set_server() {
   fatal "Configuration du serveur impossible. Videz le volume /data de ce conteneur (ez365-bw-cli) puis relancez-le." "$output"
 }
 
+# Authentifie le compte de service par cle API (BW_CLIENTID / BW_CLIENTSECRET,
+# lus directement dans l'environnement par la CLI).
+authenticate() {
+  if output="$(bw login --apikey 2>&1)"; then
+    return 0
+  fi
+  case "$output" in
+    *"already logged in"*|*"You are logged in"*)
+      log "La CLI signale une session deja ouverte, on continue."
+      return 0 ;;
+  esac
+  fatal "Authentification refusee. Verifiez BW_CLIENTID et BW_CLIENTSECRET (cle API du compte de service Bitwarden)." "$output"
+}
+
 # ---------------------------------------------------------------------------
 # 1. Serveur
 # ---------------------------------------------------------------------------
@@ -100,24 +114,33 @@ case "$current_status" in
     ;;
   *)
     log "Authentification par cle API…"
-    # `bw login --apikey` lit BW_CLIENTID / BW_CLIENTSECRET dans l'environnement.
-    if ! output="$(bw login --apikey 2>&1)"; then
-      case "$output" in
-        *"already logged in"*|*"You are logged in"*)
-          log "La CLI signale une session deja ouverte, on continue." ;;
-        *)
-          fatal "Authentification refusee. Verifiez BW_CLIENTID et BW_CLIENTSECRET (cle API du compte de service Bitwarden)." "$output" ;;
-      esac
-    fi
+    authenticate
     ;;
 esac
 
 # ---------------------------------------------------------------------------
 # 3. Deverrouillage
 # ---------------------------------------------------------------------------
+# `bw status` peut annoncer « locked » alors que les jetons de la session
+# stockee dans /data sont perimes : le deverrouillage repond alors « You are
+# not logged in. ». Les jetons d'une connexion par cle API expirant avec le
+# temps, cet etat revient tot ou tard — on se reauthentifie sur place plutot
+# que d'exiger une purge manuelle du volume.
 log "Deverrouillage…"
 if ! BW_SESSION="$(bw unlock --passwordenv BW_PASSWORD --raw 2>&1)"; then
-  fatal "Deverrouillage impossible. Verifiez BW_PASSWORD (mot de passe maitre du compte de service)." "$BW_SESSION"
+  case "$BW_SESSION" in
+    *"not logged in"*)
+      log "Session locale perimee malgre l'etat « $current_status » : reauthentification."
+      bw logout >/dev/null 2>&1 || true
+      set_server
+      authenticate
+      if ! BW_SESSION="$(bw unlock --passwordenv BW_PASSWORD --raw 2>&1)"; then
+        fatal "Deverrouillage impossible apres reauthentification. Verifiez BW_PASSWORD (mot de passe maitre du compte de service)." "$BW_SESSION"
+      fi
+      log "Reauthentification reussie." ;;
+    *)
+      fatal "Deverrouillage impossible. Verifiez BW_PASSWORD (mot de passe maitre du compte de service)." "$BW_SESSION" ;;
+  esac
 fi
 [ -n "$BW_SESSION" ] || fatal "Deverrouillage sans cle de session : verifiez BW_PASSWORD."
 export BW_SESSION
