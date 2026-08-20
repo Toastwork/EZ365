@@ -111,10 +111,21 @@
   <!-- ============ Utilisateurs ============ -->
   <section>
     <h3>2 · Utilisateurs</h3>
-    <div class="grid-3">
+    <div class="grid-2">
       <div>
         <label for="user_domain">Domaine des comptes</label>
         <input id="user_domain" name="user_domain" value="{{ tenant.default_domain }}" required>
+      </div>
+      <div>
+        <label for="default_sku">Licence par defaut</label>
+        <select id="default_sku" name="default_sku">
+          <option value="">— aucune —</option>
+          {% for s in skus %}
+            <option value="{{ s.skuId }}|{{ s.skuPartNumber }}" {% if s.available == 0 %}disabled{% endif %}>
+              {{ s.skuPartNumber }} — {{ s.available }} dispo. / {{ s.enabled }}
+            </option>
+          {% endfor %}
+        </select>
       </div>
       <div>
         <label for="usage_location">Pays (usageLocation)</label>
@@ -127,31 +138,47 @@
         </label>
       </div>
     </div>
+    {% if not skus %}
+      <p class="muted small mt">Aucune licence lisible sur ce tenant.</p>
+    {% endif %}
 
-    <table class="table compact mt" id="users-table">
-      <thead>
-        <tr>
-          <th>Prenom</th><th>Nom</th><th>Alias <span class="muted small">(avant @)</span></th>
-          <th>Fonction</th><th>Service</th>
-          <th>Dossier raccourci</th><th></th>
-        </tr>
-      </thead>
-      <tbody id="users-body">
-        <tr>
-          <td><input name="first_name" oninput="suggestAlias(this)"></td>
-          <td><input name="last_name" oninput="suggestAlias(this)"></td>
-          <td><input name="alias" placeholder="prenom.nom"></td>
-          <td><input name="job_title"></td>
-          <td><input name="department"></td>
-          <td>
-            <select name="user_folder" class="folder-select">
-              <option value="">— dossier par defaut —</option>
-            </select>
-          </td>
-          <td><button type="button" class="btn btn-small" onclick="removeRow(this)">×</button></td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="table-scroll mt">
+      <table class="table compact" id="users-table">
+        <thead>
+          <tr>
+            <th>Prenom</th><th>Nom</th><th>Alias <span class="muted small">(avant @)</span></th>
+            <th>Fonction</th><th>Service</th>
+            <th>Licence</th><th>Dossier raccourci</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="users-body">
+          <tr>
+            <td><input name="first_name" oninput="suggestAlias(this)"></td>
+            <td><input name="last_name" oninput="suggestAlias(this)"></td>
+            <td><input name="alias" placeholder="prenom.nom"></td>
+            <td><input name="job_title"></td>
+            <td><input name="department"></td>
+            <td>
+              <select name="user_sku" class="sku-select">
+                <option value="">— licence par defaut —</option>
+                <option value="none">— aucune —</option>
+                {% for s in skus %}
+                  <option value="{{ s.skuId }}|{{ s.skuPartNumber }}" {% if s.available == 0 %}disabled{% endif %}>
+                    {{ s.skuPartNumber }} ({{ s.available }})
+                  </option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <select name="user_folder" class="folder-select">
+                <option value="">— dossier par defaut —</option>
+              </select>
+            </td>
+            <td><button type="button" class="btn btn-small" onclick="removeRow(this)">×</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
     <button type="button" class="btn btn-small" onclick="addRow()">+ Ajouter une ligne</button>
 
     <details class="mt" id="existing-users">
@@ -160,27 +187,24 @@
         Ces comptes ne sont ni crees ni modifies et ne vont pas au coffre :
         ils recoivent seulement le OneDrive et le raccourci choisi.
       </p>
-      <div class="grid-2 mt">
-        <div>
-          <label for="user-search">Rechercher</label>
-          <input id="user-search" autocomplete="off" placeholder="nom ou adresse"
-                 oninput="searchExistingUsers(this.value)"
-                 onfocus="searchExistingUsers(this.value)">
-        </div>
-        <div>
-          <label class="check mt-label">
-            <input type="checkbox" name="license_existing">
-            Leur attribuer aussi les licences cochees
-          </label>
-        </div>
-      </div>
+      <label for="user-search">Rechercher</label>
+      <input id="user-search" autocomplete="off" placeholder="nom ou adresse"
+             oninput="searchExistingUsers(this.value)"
+             onfocus="searchExistingUsers(this.value)">
       <p id="user-search-status" class="muted small mt"></p>
       <ul id="user-results" class="picker"></ul>
 
-      <table class="table compact mt hidden" id="existing-table">
-        <thead><tr><th>Utilisateur retenu</th><th>Dossier raccourci</th><th></th></tr></thead>
-        <tbody id="existing-body"></tbody>
-      </table>
+      <div class="table-scroll mt hidden" id="existing-table">
+        <table class="table compact">
+          <thead>
+            <tr>
+              <th>Utilisateur retenu</th><th>Licences actuelles</th>
+              <th>Licence a ajouter</th><th>Dossier raccourci</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="existing-body"></tbody>
+        </table>
+      </div>
     </details>
 
     <details class="mt">
@@ -190,27 +214,9 @@
     </details>
   </section>
 
-  <!-- ============ Licences ============ -->
-  <section>
-    <h3>3 · Licences</h3>
-    {% if skus %}
-    <div class="sku-grid">
-      {% for s in skus %}
-        <label class="sku {{ 'sku-empty' if s.available == 0 else '' }}">
-          <input type="checkbox" name="sku_id" value="{{ s.skuId }}|{{ s.skuPartNumber }}">
-          <span class="sku-name">{{ s.skuPartNumber }}</span>
-          <span class="sku-count">{{ s.available }} dispo. / {{ s.enabled }}</span>
-        </label>
-      {% endfor %}
-    </div>
-    {% else %}
-      <p class="muted">Aucune licence lisible sur ce tenant.</p>
-    {% endif %}
-  </section>
-
   <!-- ============ OneDrive & raccourcis ============ -->
   <section>
-    <h3>4 · OneDrive et raccourcis</h3>
+    <h3>3 · OneDrive et raccourcis</h3>
     <label class="check"><input type="checkbox" name="provision_onedrive" checked>
       Provisionner le OneDrive de chaque utilisateur
       <span class="muted small">— necessite une licence, peut prendre plusieurs minutes</span>
@@ -235,7 +241,7 @@
 
   <!-- ============ Coffre ============ -->
   <section>
-    <h3>5 · Depot dans Bitwarden</h3>
+    <h3>4 · Depot dans Bitwarden</h3>
     <label class="check">
       <input type="checkbox" name="vault_enabled" {% if vault_ready %}checked{% else %}disabled{% endif %}>
       Enregistrer chaque identifiant cree dans le coffre

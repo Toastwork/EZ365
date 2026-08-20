@@ -62,7 +62,10 @@ def normalize_user(raw: dict, domain: str, default_usage_location: str) -> dict:
         # Compte choisi dans la liste des utilisateurs deja presents sur le
         # tenant : on ne doit jamais le creer, seulement l'utiliser.
         "existing_only": bool(raw.get("existing_only")),
-        "assign_licenses": bool(raw.get("assign_licenses", True)),
+        # Licences propres a cette personne, deja resolues par le routeur
+        # (choix de la ligne, sinon licence par defaut du traitement).
+        "sku_ids": list(raw.get("sku_ids") or []),
+        "sku_names": list(raw.get("sku_names") or []),
     }
 
 
@@ -148,7 +151,7 @@ async def resolve_shortcut_target(
 # Etape 2 : utilisateurs
 # ---------------------------------------------------------------------------
 async def create_users(
-    ctx: JobContext, graph: GraphClient, users: list[dict], sku_ids: list[str], site: dict | None
+    ctx: JobContext, graph: GraphClient, users: list[dict], site: dict | None
 ) -> list[dict]:
     results: list[dict] = []
     for spec in users:
@@ -162,6 +165,7 @@ async def create_users(
             "onedrive": "en attente",
             "shortcut": "en attente",
             "shortcut_folder": spec.get("shortcut_folder", ""),
+            "license_names": list(spec.get("sku_names") or []),
             "vault": "en attente",
             "errors": [],
         }
@@ -215,13 +219,15 @@ async def create_users(
                 ctx.success("utilisateurs", f"Compte cree : {spec['upn']}")
 
             # -- licences --------------------------------------------------
-            if sku_ids and spec.get("assign_licenses", True):
+            sku_ids = spec.get("sku_ids") or []
+            if sku_ids:
                 try:
                     await graph.assign_license(entry["id"], sku_ids)
                     entry["licenses"] = sku_ids
                     ctx.success(
                         "licences",
-                        f"{len(sku_ids)} licence(s) attribuee(s) a {spec['upn']}",
+                        f"{', '.join(spec.get('sku_names') or sku_ids)} attribuee(s) "
+                        f"a {spec['upn']}",
                     )
                 except GraphError as exc:
                     entry["errors"].append(f"licence : {exc.friendly}")
@@ -429,8 +435,6 @@ async def store_in_vault(
 async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
     site_spec = spec.get("site") or {"mode": "none"}
     user_specs = spec.get("users") or []
-    sku_ids = spec.get("sku_ids") or []
-    sku_names = spec.get("sku_names") or []
     vault_spec = spec.get("vault") or {"enabled": False}
     do_onedrive = bool(spec.get("provision_onedrive", True))
     do_shortcut = bool(spec.get("add_shortcut", True))
@@ -444,9 +448,7 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
     async with GraphClient(tenant["id"]) as graph:
         site = await ensure_site(ctx, graph, site_spec)
 
-        results = await create_users(ctx, graph, user_specs, sku_ids, site)
-        for entry in results:
-            entry["license_names"] = sku_names
+        results = await create_users(ctx, graph, user_specs, site)
 
         if do_onedrive:
             await provision_onedrives(ctx, graph, results)

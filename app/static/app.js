@@ -121,11 +121,19 @@ async function runUserSearch(term) {
 
     shown.forEach(function (user) {
       const item = document.createElement("li");
-      item.innerHTML = '<span class="pick-name"></span><span class="pick-upn"></span>';
+      item.innerHTML = '<span class="pick-name"></span>' +
+                       '<span class="pick-upn"></span>' +
+                       '<span class="pick-lic"></span>';
       item.children[0].textContent = user.displayName || user.userPrincipalName;
       item.children[1].textContent = user.userPrincipalName;
+      item.children[2].textContent = (user.licenses && user.licenses.length)
+        ? user.licenses.join(", ")
+        : "sans licence";
+      if (!user.licenses || !user.licenses.length) {
+        item.children[2].classList.add("pick-lic-none");
+      }
       item.onclick = function () {
-        addExistingUser(user.userPrincipalName, user.displayName || user.userPrincipalName);
+        addExistingUser(user);
         item.remove();
       };
       list.appendChild(item);
@@ -140,8 +148,27 @@ function pickedUpns() {
     .map(function (i) { return (i.value || "").toLowerCase(); });
 }
 
-function addExistingUser(upn, name) {
-  if (pickedUpns().indexOf((upn || "").toLowerCase()) !== -1) { return; }
+// Liste des licences du tenant, reprise du selecteur « licence par defaut »
+// deja rendu par le serveur : pas besoin d'un second jeu de donnees.
+function skuOptions(placeholder) {
+  const select = document.createElement("select");
+  select.appendChild(new Option(placeholder, ""));
+  const source = document.getElementById("default_sku");
+  if (source) {
+    Array.from(source.options).slice(1).forEach(function (opt) {
+      const copy = new Option(opt.textContent.trim(), opt.value);
+      copy.disabled = opt.disabled;
+      select.appendChild(copy);
+    });
+  }
+  return select;
+}
+
+function addExistingUser(user) {
+  const upn = user.userPrincipalName || "";
+  const name = user.displayName || upn;
+  if (pickedUpns().indexOf(upn.toLowerCase()) !== -1) { return; }
+
   const body = document.getElementById("existing-body");
   const row = document.createElement("tr");
 
@@ -154,12 +181,30 @@ function addExistingUser(upn, name) {
   cellUser.querySelector("input[name=existing_upn]").value = upn;
   cellUser.querySelector("input[name=existing_name]").value = name;
 
+  const cellCurrent = document.createElement("td");
+  cellCurrent.className = "small";
+  if (user.licenses && user.licenses.length) {
+    user.licenses.forEach(function (name) {
+      const pill = document.createElement("span");
+      pill.className = "pill pill-ok lic";
+      pill.textContent = name;
+      cellCurrent.appendChild(pill);
+    });
+  } else {
+    cellCurrent.innerHTML = '<span class="pill pill-warn">sans licence</span>';
+  }
+
+  const cellSku = document.createElement("td");
+  const skuSelect = skuOptions("— ne rien changer —");
+  skuSelect.name = "existing_sku";
+  cellSku.appendChild(skuSelect);
+
   const cellFolder = document.createElement("td");
-  const select = document.createElement("select");
-  select.name = "existing_folder";
-  select.className = "folder-select";
-  select.appendChild(new Option("— dossier par defaut —", ""));
-  cellFolder.appendChild(select);
+  const folderSelect = document.createElement("select");
+  folderSelect.name = "existing_folder";
+  folderSelect.className = "folder-select";
+  folderSelect.appendChild(new Option("— dossier par defaut —", ""));
+  cellFolder.appendChild(folderSelect);
 
   const cellAction = document.createElement("td");
   cellAction.innerHTML = '<button type="button" class="btn btn-small">×</button>';
@@ -170,9 +215,9 @@ function addExistingUser(upn, name) {
     }
   };
 
-  row.appendChild(cellUser);
-  row.appendChild(cellFolder);
-  row.appendChild(cellAction);
+  [cellUser, cellCurrent, cellSku, cellFolder, cellAction].forEach(function (cell) {
+    row.appendChild(cell);
+  });
   body.appendChild(row);
   document.getElementById("existing-table").classList.remove("hidden");
   applyFolders();
@@ -250,10 +295,15 @@ function confirmProvision(form) {
     alert("Ajoutez au moins un utilisateur.");
     return false;
   }
-  const skus = form.querySelectorAll("input[name=sku_id]:checked").length;
+  const defaultSku = form.querySelector("[name=default_sku]");
+  const hasDefault = defaultSku && defaultSku.value;
+  const perRow = Array.from(form.querySelectorAll("[name=user_sku]"))
+    .filter(function (s) { return s.value && s.value !== "none"; }).length;
   let message = total ? "Creer " + total + " utilisateur(s)" : "Aucun compte a creer";
   if (total) {
-    message += skus ? " avec " + skus + " licence(s)" : " SANS licence (pas de OneDrive possible)";
+    message += (hasDefault || perRow)
+      ? " avec licence"
+      : " SANS licence (pas de OneDrive possible)";
   }
   if (existing) {
     message += ", traiter " + existing + " compte(s) deja existant(s)";

@@ -196,3 +196,13 @@ textarea { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
 .pick-name { font-weight: 500; }
 .pick-upn { font-family: ui-monospace, Consolas, monospace; font-size: .78rem;
             color: var(--muted); }
+.pick-lic { font-size: .76rem; color: var(--ok-fg); text-align: right; }
+.pick-lic-none { color: var(--muted); font-style: italic; }
+.picker li { display: grid; grid-template-columns: 1fr 1fr auto; }
+
+/* Les tableaux d'utilisateurs sont larges : ils defilent dans leur cadre
+   plutot que d'elargir la page. */
+.table-scroll { overflow-x: auto; }
+.table-scroll .table { min-width: 900px; }
+.table.compact select { padding: .3rem .35rem; font-size: .84rem; }
+.lic { margin: 0 .2rem .2rem 0; }

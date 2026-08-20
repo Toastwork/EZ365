@@ -144,39 +144,40 @@ async def existing_only_tests():
     G.assigned = []
 
     spec_existing = provisioning.normalize_user(
-        {"upn": "deja@c.fr", "existing_only": True, "assign_licenses": False,
-         "shortcut_folder": "RH"}, "c.fr", "FR")
-    spec_new = provisioning.normalize_user({"first_name": "Neo"}, "c.fr", "FR")
+        {"upn": "deja@c.fr", "existing_only": True, "shortcut_folder": "RH"}, "c.fr", "FR")
+    spec_new = provisioning.normalize_user(
+        {"first_name": "Neo", "sku_ids": ["sku-1"], "sku_names": ["BUSINESS"]}, "c.fr", "FR")
 
-    check("compte existant : pas de licence par defaut",
-          spec_existing["assign_licenses"] is False, spec_existing)
-    check("nouveau compte : licences par defaut",
-          spec_new["assign_licenses"] is True, spec_new)
+    check("compte existant sans licence demandee", spec_existing["sku_ids"] == [], spec_existing)
+    check("licence portee par le spec", spec_new["sku_ids"] == ["sku-1"], spec_new)
 
     g = G(present={"deja@c.fr"})
     G.assigned = []
-    res = await provisioning.create_users(ctx, g, [spec_existing, spec_new], ["sku-1"], None)
+    res = await provisioning.create_users(ctx, g, [spec_existing, spec_new], None)
     check("compte existant non recree", bool(g.created) and g.created[0]["userPrincipalName"] == "neo@c.fr", g.created)
     check("un seul compte cree", len(g.created) == 1, g.created)
     check("licence non attribuee a l'existant",
           [a[0] for a in G.assigned] == ["nouveau"], G.assigned)
     check("nom repris de l'annuaire", res[0]["display_name"] == "Nom Annuaire", res[0])
+    check("libelles de licence portes par l'entree",
+          res[1]["license_names"] == ["BUSINESS"], res[1]["license_names"])
     check("existant sans mot de passe", res[0]["password"] == "", res[0])
     check("dossier conserve", res[0]["shortcut_folder"] == "RH", res[0])
 
     # compte disparu entre la selection et le lancement
     g2 = G(present=set())
     G.assigned = []
-    res2 = await provisioning.create_users(ctx, g2, [spec_existing], [], None)
+    res2 = await provisioning.create_users(ctx, g2, [spec_existing], None)
     check("compte existant disparu -> erreur, aucune creation",
           not g2.created and res2[0]["errors"], res2[0])
 
     # licences accordees si l'operateur le demande
     spec_licensed = provisioning.normalize_user(
-        {"upn": "deja@c.fr", "existing_only": True, "assign_licenses": True}, "c.fr", "FR")
+        {"upn": "deja@c.fr", "existing_only": True,
+         "sku_ids": ["sku-1"], "sku_names": ["BUSINESS"]}, "c.fr", "FR")
     g3 = G(present={"deja@c.fr"})
     G.assigned = []
-    await provisioning.create_users(ctx, g3, [spec_licensed], ["sku-1"], None)
+    await provisioning.create_users(ctx, g3, [spec_licensed], None)
     check("licence attribuee si demandee", [a[0] for a in G.assigned] == ["id-deja@c.fr"], G.assigned)
 
 asyncio.run(existing_only_tests())

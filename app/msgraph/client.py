@@ -197,9 +197,11 @@ class GraphClient:
 
     async def list_users(self, search: str = "", limit: int = 200) -> list[dict]:
         params: dict[str, str] = {
+            # assignedLicenses evite un appel /licenseDetails par utilisateur :
+            # une seule requete suffit pour toute la liste.
             "$select": (
                 "id,displayName,userPrincipalName,mail,accountEnabled,"
-                "usageLocation,jobTitle,department"
+                "usageLocation,jobTitle,department,assignedLicenses"
             ),
             "$top": "100",
             "$orderby": "displayName",

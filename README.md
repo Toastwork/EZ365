@@ -137,6 +137,18 @@ bibliotheque. Le raccourci prend le nom du dossier vise, sinon celui du site.
 Les cibles sont resolues une fois par dossier distinct : dix personnes pointant
 sur le meme dossier ne coutent qu'un aller-retour Graph.
 
+### Licences
+
+La licence se choisit **par utilisateur**, dans la colonne « Licence » du
+tableau. Une ligne laissee sur « licence par defaut » prend celle definie en
+tete de section ; « aucune » n'en attribue pas, meme si un defaut existe.
+
+Chaque entree indique le nombre de postes disponibles, et une licence epuisee
+n'est pas selectionnable. Une seule licence par personne : le traitement en
+accepte plusieurs, mais le formulaire n'en propose qu'une.
+
+Sans licence, pas de OneDrive — donc pas de raccourci.
+
 ### Utilisateurs deja presents sur le tenant
 
 Le bloc « Ajouter des utilisateurs deja presents » recherche les comptes du
@@ -145,9 +157,11 @@ comptes ne sont **jamais crees ni modifies** : pas de mot de passe genere, rien
 depose au coffre. Si l'un d'eux a disparu du tenant entre la selection et le
 lancement, le traitement le signale en erreur sans creer de compte a sa place.
 
-Les licences cochees ne leur sont **pas** attribuees, sauf a cocher « Leur
-attribuer aussi les licences cochees » — pour ne pas en consommer par
-inadvertance.
+Le tableau affiche les **licences dont ils disposent deja** (ou « sans
+licence »), lues avec la recherche en un seul appel Graph. La colonne
+« Licence a ajouter » reste sur « ne rien changer » par defaut : aucune licence
+ne leur est attribuee tant qu'on n'en designe pas une, pour ne pas en consommer
+par inadvertance.
 
 ### Notes de fonctionnement
 

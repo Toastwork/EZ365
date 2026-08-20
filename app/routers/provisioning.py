@@ -50,6 +50,19 @@ def parse_bulk(text: str) -> list[dict]:
     return users
 
 
+def split_sku(value: str) -> tuple[list[str], list[str]]:
+    """Decode une valeur de liste « <skuId>|<libelle> ».
+
+    Les listes portent l'identifiant ET le libelle dans la meme valeur : cela
+    evite d'apparier deux champs paralleles a la lecture du formulaire.
+    """
+    value = (value or "").strip()
+    if not value:
+        return [], []
+    sku_id, _, label = value.partition("|")
+    return [sku_id], [label or sku_id]
+
+
 @router.post("/tenants/{tenant_id}/provision")
 async def start_provisioning(
     request: Request,
@@ -79,6 +92,7 @@ async def start_provisioning(
     job_titles = form.getlist("job_title")
     departments = form.getlist("department")
     user_folders = form.getlist("user_folder")
+    user_skus = form.getlist("user_sku")
 
     raw_users: list[dict] = []
     for i in range(len(first_names)):
@@ -98,18 +112,20 @@ async def start_provisioning(
                 "shortcut_folder": (
                     user_folders[i] if i < len(user_folders) else ""
                 ).strip(),
+                # "" = licence par defaut du traitement, "none" = aucune.
+                "sku_choice": (user_skus[i] if i < len(user_skus) else "").strip(),
             }
         )
     raw_users.extend(parse_bulk(form.get("bulk_users", "")))
 
     # -- comptes deja presents sur le tenant, choisis dans la liste -----------
     # Ils ne sont jamais crees : on ne fait que leur provisionner un OneDrive
-    # et y poser un raccourci. Les licences ne leur sont attribuees que sur
-    # demande explicite, pour ne pas en consommer par inadvertance.
-    license_existing = form.get("license_existing") == "on"
+    # et y poser un raccourci. Une licence n'est attribuee que si la ligne en
+    # designe une, pour ne pas en consommer par inadvertance.
     existing_upns = form.getlist("existing_upn")
     existing_names = form.getlist("existing_name")
     existing_folders = form.getlist("existing_folder")
+    existing_skus = form.getlist("existing_sku")
     picked: list[dict] = []
     for i, upn in enumerate(existing_upns):
         upn = (upn or "").strip().lower()
@@ -125,7 +141,10 @@ async def start_provisioning(
                     existing_folders[i] if i < len(existing_folders) else ""
                 ).strip(),
                 "existing_only": True,
-                "assign_licenses": license_existing,
+                # Vide = on ne touche pas aux licences de ce compte.
+                "sku_choice": (
+                    existing_skus[i] if i < len(existing_skus) else ""
+                ).strip(),
             }
         )
 
@@ -143,11 +162,30 @@ async def start_provisioning(
 
     usage_location = (form.get("usage_location") or "FR").strip().upper()[:2]
     force_change = form.get("force_change") == "on"
+
+    # Licence retenue pour chaque ligne. Pour un nouveau compte, une ligne
+    # laissee vide prend la licence par defaut du traitement ; « none » n'en
+    # met aucune. Pour un compte existant, vide signifie « ne rien changer ».
+    default_ids, default_names = split_sku(form.get("default_sku", ""))
+
+    def resolve_skus(raw: dict) -> None:
+        choice = raw.pop("sku_choice", "")
+        if choice == "none":
+            raw["sku_ids"], raw["sku_names"] = [], []
+        elif choice:
+            raw["sku_ids"], raw["sku_names"] = split_sku(choice)
+        elif raw.get("existing_only"):
+            raw["sku_ids"], raw["sku_names"] = [], []
+        else:
+            raw["sku_ids"], raw["sku_names"] = list(default_ids), list(default_names)
+
     users = []
     for raw in raw_users:
         raw["force_change"] = force_change
+        resolve_skus(raw)
         users.append(provisioning.normalize_user(raw, domain, usage_location))
     for raw in picked:
+        resolve_skus(raw)
         users.append(provisioning.normalize_user(raw, domain, usage_location))
 
     duplicates = {u["upn"] for u in users if [x["upn"] for x in users].count(u["upn"]) > 1}
@@ -160,16 +198,6 @@ async def start_provisioning(
         )
         return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
 
-    # Les cases a cocher portent la valeur "<skuId>|<libelle>" : une case non
-    # cochee n'est pas envoyee, ce qui evite d'avoir a apparier deux champs.
-    sku_ids, sku_names = [], []
-    for value in form.getlist("sku_id"):
-        if not value:
-            continue
-        sku_id, _, label = value.partition("|")
-        sku_ids.append(sku_id)
-        sku_names.append(label or sku_id)
-
     vault_spec = {
         "enabled": form.get("vault_enabled") == "on",
         "organization_id": (form.get("vault_org_id") or tenant.get("vault_org_id") or "").strip(),
@@ -181,8 +209,6 @@ async def start_provisioning(
     spec = {
         "site": site_spec,
         "users": users,
-        "sku_ids": sku_ids,
-        "sku_names": sku_names,
         "provision_onedrive": form.get("provision_onedrive") == "on",
         "add_shortcut": form.get("add_shortcut") == "on",
         "vault": vault_spec,
@@ -310,8 +336,22 @@ async def search_users(
     try:
         async with GraphClient(tenant_id) as graph:
             users = await graph.list_users(q, limit=25)
+            # Les licences arrivent sous forme de skuId : on les traduit avec
+            # le catalogue du tenant, lu une seule fois pour toute la liste.
+            catalogue = {
+                s["skuId"]: s["skuPartNumber"] for s in await graph.subscribed_skus()
+            }
     except GraphError as exc:
         return JSONResponse({"error": exc.friendly, "users": []}, status_code=502)
+
+    def licence_names(user: dict) -> list[str]:
+        names = []
+        for assigned in user.get("assignedLicenses") or []:
+            sku_id = assigned.get("skuId")
+            if sku_id:
+                names.append(catalogue.get(sku_id, sku_id))
+        return sorted(names)
+
     return JSONResponse(
         {
             "users": [
@@ -319,6 +359,8 @@ async def search_users(
                     "id": u.get("id"),
                     "displayName": u.get("displayName"),
                     "userPrincipalName": u.get("userPrincipalName"),
+                    "accountEnabled": u.get("accountEnabled", True),
+                    "licenses": licence_names(u),
                 }
                 for u in users
             ]
