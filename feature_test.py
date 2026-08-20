@@ -114,6 +114,73 @@ async def shortcut_tests():
 
 asyncio.run(shortcut_tests())
 
+
+# --- regression : le repli de slugify ne doit pas polluer les UPN ---------
+from app.msgraph.sharepoint import slugify as _slug
+check("slugify vide -> chaine vide", _slug("") == "", _slug(""))
+check("slugify vide avec repli explicite", _slug("", fallback="site") == "site", _slug("", fallback="site"))
+check("slugify ponctuation seule -> vide", _slug("***") == "", _slug("***"))
+
+u_first = provisioning.normalize_user({"first_name": "Neo"}, "c.fr", "FR")
+check("prenom seul -> upn propre", u_first["upn"] == "neo@c.fr", u_first["upn"])
+u_last = provisioning.normalize_user({"last_name": "Dupont"}, "c.fr", "FR")
+check("nom seul -> upn propre", u_last["upn"] == "dupont@c.fr", u_last["upn"])
+u_both = provisioning.normalize_user({"first_name": "Marie", "last_name": "Dupont"}, "c.fr", "FR")
+check("prenom + nom", u_both["upn"] == "marie.dupont@c.fr", u_both["upn"])
+
+# --- comptes existants selectionnes --------------------------------------
+async def existing_only_tests():
+    ctx = Ctx()
+
+    class G:
+        def __init__(self, present): self.present = present; self.created = []
+        async def find_user(self, upn):
+            return {"id": "id-" + upn, "displayName": "Nom Annuaire", "usageLocation": "FR"}                 if upn in self.present else None
+        async def create_user(self, payload):
+            self.created.append(payload); return {"id": "nouveau"}
+        async def update_user(self, uid, payload): pass
+        async def assign_license(self, uid, skus): self.assigned.append((uid, skus))
+        async def add_group_member(self, gid, uid): pass
+    G.assigned = []
+
+    spec_existing = provisioning.normalize_user(
+        {"upn": "deja@c.fr", "existing_only": True, "assign_licenses": False,
+         "shortcut_folder": "RH"}, "c.fr", "FR")
+    spec_new = provisioning.normalize_user({"first_name": "Neo"}, "c.fr", "FR")
+
+    check("compte existant : pas de licence par defaut",
+          spec_existing["assign_licenses"] is False, spec_existing)
+    check("nouveau compte : licences par defaut",
+          spec_new["assign_licenses"] is True, spec_new)
+
+    g = G(present={"deja@c.fr"})
+    G.assigned = []
+    res = await provisioning.create_users(ctx, g, [spec_existing, spec_new], ["sku-1"], None)
+    check("compte existant non recree", bool(g.created) and g.created[0]["userPrincipalName"] == "neo@c.fr", g.created)
+    check("un seul compte cree", len(g.created) == 1, g.created)
+    check("licence non attribuee a l'existant",
+          [a[0] for a in G.assigned] == ["nouveau"], G.assigned)
+    check("nom repris de l'annuaire", res[0]["display_name"] == "Nom Annuaire", res[0])
+    check("existant sans mot de passe", res[0]["password"] == "", res[0])
+    check("dossier conserve", res[0]["shortcut_folder"] == "RH", res[0])
+
+    # compte disparu entre la selection et le lancement
+    g2 = G(present=set())
+    G.assigned = []
+    res2 = await provisioning.create_users(ctx, g2, [spec_existing], [], None)
+    check("compte existant disparu -> erreur, aucune creation",
+          not g2.created and res2[0]["errors"], res2[0])
+
+    # licences accordees si l'operateur le demande
+    spec_licensed = provisioning.normalize_user(
+        {"upn": "deja@c.fr", "existing_only": True, "assign_licenses": True}, "c.fr", "FR")
+    g3 = G(present={"deja@c.fr"})
+    G.assigned = []
+    await provisioning.create_users(ctx, g3, [spec_licensed], ["sku-1"], None)
+    check("licence attribuee si demandee", [a[0] for a in G.assigned] == ["id-deja@c.fr"], G.assigned)
+
+asyncio.run(existing_only_tests())
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)

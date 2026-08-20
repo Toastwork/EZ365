@@ -59,6 +59,10 @@ def normalize_user(raw: dict, domain: str, default_usage_location: str) -> dict:
         # Dossier de la bibliotheque a raccourcir pour cette personne ;
         # vide = dossier par defaut du traitement.
         "shortcut_folder": (raw.get("shortcut_folder") or "").strip().strip("/"),
+        # Compte choisi dans la liste des utilisateurs deja presents sur le
+        # tenant : on ne doit jamais le creer, seulement l'utiliser.
+        "existing_only": bool(raw.get("existing_only")),
+        "assign_licenses": bool(raw.get("assign_licenses", True)),
     }
 
 
@@ -84,7 +88,8 @@ async def ensure_site(ctx: JobContext, graph: GraphClient, spec: dict) -> dict |
     display_name = (spec.get("display_name") or "").strip()
     if not display_name:
         raise ValueError("Le nom du site est obligatoire.")
-    path = sharepoint.slugify(spec.get("path") or display_name)
+    # Ici le repli est legitime : une adresse de site ne peut pas etre vide.
+    path = sharepoint.slugify(spec.get("path") or display_name, fallback="site")
     description = spec.get("description", "")
 
     if mode == "team":
@@ -166,14 +171,23 @@ async def create_users(
                 entry["id"] = existing["id"]
                 entry["existing"] = True
                 entry["password"] = ""
-                ctx.warn(
-                    "utilisateurs",
-                    f"{spec['upn']} existe deja : compte reutilise, mot de passe inchange.",
-                )
+                entry["display_name"] = existing.get("displayName") or entry["display_name"]
+                if spec["existing_only"]:
+                    ctx.info("utilisateurs", f"Compte existant retenu : {spec['upn']}")
+                else:
+                    ctx.warn(
+                        "utilisateurs",
+                        f"{spec['upn']} existe deja : compte reutilise, mot de passe inchange.",
+                    )
                 if not existing.get("usageLocation"):
                     await graph.update_user(
                         existing["id"], {"usageLocation": spec["usage_location"]}
                     )
+            elif spec["existing_only"]:
+                raise ValueError(
+                    "compte introuvable sur le tenant : il figurait pourtant dans la "
+                    "liste des utilisateurs existants (a-t-il ete supprime depuis ?)"
+                )
             else:
                 payload = {
                     "accountEnabled": True,
@@ -201,7 +215,7 @@ async def create_users(
                 ctx.success("utilisateurs", f"Compte cree : {spec['upn']}")
 
             # -- licences --------------------------------------------------
-            if sku_ids:
+            if sku_ids and spec.get("assign_licenses", True):
                 try:
                     await graph.assign_license(entry["id"], sku_ids)
                     entry["licenses"] = sku_ids

@@ -84,6 +84,100 @@ async function loadFolders(siteId) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Utilisateurs deja presents sur le tenant
+// ---------------------------------------------------------------------------
+let searchTimer = null;
+
+function searchExistingUsers(term) {
+  // Anti-rebond : on ne veut pas une requete Graph a chaque frappe.
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(function () { runUserSearch(term); }, 350);
+}
+
+async function runUserSearch(term) {
+  const form = document.querySelector("form.provision");
+  const list = document.getElementById("user-results");
+  const status = document.getElementById("user-search-status");
+  if (!form || !list) { return; }
+
+  status.textContent = "Recherche…";
+  list.innerHTML = "";
+  try {
+    const url = "/api/tenants/" + encodeURIComponent(form.dataset.tenant) +
+                "/users?q=" + encodeURIComponent(term || "");
+    const resp = await fetch(url, { headers: { Accept: "application/json" } });
+    const data = await resp.json();
+    if (!resp.ok) { status.textContent = data.error || "Recherche impossible."; return; }
+
+    const users = data.users || [];
+    const already = pickedUpns();
+    const shown = users.filter(function (u) {
+      return already.indexOf((u.userPrincipalName || "").toLowerCase()) === -1;
+    });
+    status.textContent = shown.length
+      ? shown.length + " compte(s) — cliquez pour ajouter."
+      : "Aucun compte a proposer.";
+
+    shown.forEach(function (user) {
+      const item = document.createElement("li");
+      item.innerHTML = '<span class="pick-name"></span><span class="pick-upn"></span>';
+      item.children[0].textContent = user.displayName || user.userPrincipalName;
+      item.children[1].textContent = user.userPrincipalName;
+      item.onclick = function () {
+        addExistingUser(user.userPrincipalName, user.displayName || user.userPrincipalName);
+        item.remove();
+      };
+      list.appendChild(item);
+    });
+  } catch (err) {
+    status.textContent = "Recherche impossible.";
+  }
+}
+
+function pickedUpns() {
+  return Array.from(document.querySelectorAll("input[name=existing_upn]"))
+    .map(function (i) { return (i.value || "").toLowerCase(); });
+}
+
+function addExistingUser(upn, name) {
+  if (pickedUpns().indexOf((upn || "").toLowerCase()) !== -1) { return; }
+  const body = document.getElementById("existing-body");
+  const row = document.createElement("tr");
+
+  const cellUser = document.createElement("td");
+  cellUser.innerHTML =
+    '<span class="strong"></span><div class="muted mono small"></div>' +
+    '<input type="hidden" name="existing_upn"><input type="hidden" name="existing_name">';
+  cellUser.children[0].textContent = name;
+  cellUser.children[1].textContent = upn;
+  cellUser.querySelector("input[name=existing_upn]").value = upn;
+  cellUser.querySelector("input[name=existing_name]").value = name;
+
+  const cellFolder = document.createElement("td");
+  const select = document.createElement("select");
+  select.name = "existing_folder";
+  select.className = "folder-select";
+  select.appendChild(new Option("— dossier par defaut —", ""));
+  cellFolder.appendChild(select);
+
+  const cellAction = document.createElement("td");
+  cellAction.innerHTML = '<button type="button" class="btn btn-small">×</button>';
+  cellAction.firstChild.onclick = function () {
+    row.remove();
+    if (!body.rows.length) {
+      document.getElementById("existing-table").classList.add("hidden");
+    }
+  };
+
+  row.appendChild(cellUser);
+  row.appendChild(cellFolder);
+  row.appendChild(cellAction);
+  body.appendChild(row);
+  document.getElementById("existing-table").classList.remove("hidden");
+  applyFolders();
+}
+
 function suggestPath(value) {
   const path = document.getElementById("site_path");
   if (!path.dataset.touched) { path.value = slug(value); }
@@ -150,14 +244,20 @@ function confirmProvision(form) {
   }).length;
   const bulk = (form.querySelector("[name=bulk_users]").value || "")
     .split("\n").filter(function (l) { return l.trim() && !l.startsWith("#"); }).length;
+  const existing = pickedUpns().length;
   const total = rows + bulk;
-  if (total === 0) {
+  if (total === 0 && existing === 0) {
     alert("Ajoutez au moins un utilisateur.");
     return false;
   }
   const skus = form.querySelectorAll("input[name=sku_id]:checked").length;
-  let message = "Creer " + total + " utilisateur(s)";
-  message += skus ? " avec " + skus + " licence(s)" : " SANS licence (pas de OneDrive possible)";
+  let message = total ? "Creer " + total + " utilisateur(s)" : "Aucun compte a creer";
+  if (total) {
+    message += skus ? " avec " + skus + " licence(s)" : " SANS licence (pas de OneDrive possible)";
+  }
+  if (existing) {
+    message += ", traiter " + existing + " compte(s) deja existant(s)";
+  }
   const mode = form.querySelector("input[name=site_mode]:checked").value;
   if (mode === "team" || mode === "communication") {
     message += " et creer le site « " + form.querySelector("[name=site_display_name]").value + " »";

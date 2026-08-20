@@ -154,6 +154,35 @@
     </table>
     <button type="button" class="btn btn-small" onclick="addRow()">+ Ajouter une ligne</button>
 
+    <details class="mt" id="existing-users">
+      <summary class="muted">Ajouter des utilisateurs deja presents sur le tenant</summary>
+      <p class="muted small mt">
+        Ces comptes ne sont ni crees ni modifies et ne vont pas au coffre :
+        ils recoivent seulement le OneDrive et le raccourci choisi.
+      </p>
+      <div class="grid-2 mt">
+        <div>
+          <label for="user-search">Rechercher</label>
+          <input id="user-search" autocomplete="off" placeholder="nom ou adresse"
+                 oninput="searchExistingUsers(this.value)"
+                 onfocus="searchExistingUsers(this.value)">
+        </div>
+        <div>
+          <label class="check mt-label">
+            <input type="checkbox" name="license_existing">
+            Leur attribuer aussi les licences cochees
+          </label>
+        </div>
+      </div>
+      <p id="user-search-status" class="muted small mt"></p>
+      <ul id="user-results" class="picker"></ul>
+
+      <table class="table compact mt hidden" id="existing-table">
+        <thead><tr><th>Utilisateur retenu</th><th>Dossier raccourci</th><th></th></tr></thead>
+        <tbody id="existing-body"></tbody>
+      </table>
+    </details>
+
     <details class="mt">
       <summary class="muted">Coller une liste (Excel, CSV)</summary>
       <p class="muted small mt">Une ligne par personne : <code>Prenom;Nom;alias;Fonction;Service;Dossier</code>. Tabulations et virgules acceptees ; la derniere colonne est facultative.</p>

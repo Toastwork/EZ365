@@ -102,10 +102,37 @@ async def start_provisioning(
         )
     raw_users.extend(parse_bulk(form.get("bulk_users", "")))
 
-    if not raw_users:
-        flash(request, "Aucun utilisateur a creer : le formulaire est vide.", "error")
+    # -- comptes deja presents sur le tenant, choisis dans la liste -----------
+    # Ils ne sont jamais crees : on ne fait que leur provisionner un OneDrive
+    # et y poser un raccourci. Les licences ne leur sont attribuees que sur
+    # demande explicite, pour ne pas en consommer par inadvertance.
+    license_existing = form.get("license_existing") == "on"
+    existing_upns = form.getlist("existing_upn")
+    existing_names = form.getlist("existing_name")
+    existing_folders = form.getlist("existing_folder")
+    picked: list[dict] = []
+    for i, upn in enumerate(existing_upns):
+        upn = (upn or "").strip().lower()
+        if not upn:
+            continue
+        picked.append(
+            {
+                "upn": upn,
+                "display_name": (
+                    existing_names[i] if i < len(existing_names) else ""
+                ).strip(),
+                "shortcut_folder": (
+                    existing_folders[i] if i < len(existing_folders) else ""
+                ).strip(),
+                "existing_only": True,
+                "assign_licenses": license_existing,
+            }
+        )
+
+    if not raw_users and not picked:
+        flash(request, "Aucun utilisateur selectionne : le formulaire est vide.", "error")
         return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
-    if len(raw_users) > MAX_USERS:
+    if len(raw_users) + len(picked) > MAX_USERS:
         flash(request, f"Limite de {MAX_USERS} utilisateurs par traitement depassee.", "error")
         return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
 
@@ -120,10 +147,17 @@ async def start_provisioning(
     for raw in raw_users:
         raw["force_change"] = force_change
         users.append(provisioning.normalize_user(raw, domain, usage_location))
+    for raw in picked:
+        users.append(provisioning.normalize_user(raw, domain, usage_location))
 
     duplicates = {u["upn"] for u in users if [x["upn"] for x in users].count(u["upn"]) > 1}
     if duplicates:
-        flash(request, f"Doublons dans la liste : {', '.join(sorted(duplicates))}", "error")
+        flash(
+            request,
+            "Ces comptes apparaissent deux fois (nouveaux utilisateurs et liste "
+            f"des existants ?) : {', '.join(sorted(duplicates))}",
+            "error",
+        )
         return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
 
     # Les cases a cocher portent la valeur "<skuId>|<libelle>" : une case non
@@ -159,7 +193,12 @@ async def start_provisioning(
         operator.username,
         "provisionnement.lance",
         target=tenant_id,
-        detail={"job": job_id, "utilisateurs": len(users), "site": site_mode},
+        detail={
+            "job": job_id,
+            "nouveaux": len(raw_users),
+            "existants": len(picked),
+            "site": site_mode,
+        },
     )
 
     async def runner(ctx: jobs.JobContext) -> dict:

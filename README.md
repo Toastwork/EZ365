@@ -137,6 +137,18 @@ bibliotheque. Le raccourci prend le nom du dossier vise, sinon celui du site.
 Les cibles sont resolues une fois par dossier distinct : dix personnes pointant
 sur le meme dossier ne coutent qu'un aller-retour Graph.
 
+### Utilisateurs deja presents sur le tenant
+
+Le bloc « Ajouter des utilisateurs deja presents » recherche les comptes du
+tenant et permet de leur attribuer un raccourci, chacun sur son dossier. Ces
+comptes ne sont **jamais crees ni modifies** : pas de mot de passe genere, rien
+depose au coffre. Si l'un d'eux a disparu du tenant entre la selection et le
+lancement, le traitement le signale en erreur sans creer de compte a sa place.
+
+Les licences cochees ne leur sont **pas** attribuees, sauf a cocher « Leur
+attribuer aussi les licences cochees » — pour ne pas en consommer par
+inadvertance.
+
 ### Notes de fonctionnement
 
 - **OneDrive** : le provisionnement est declenche pour tous les comptes puis

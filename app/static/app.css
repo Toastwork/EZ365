@@ -183,3 +183,16 @@ textarea { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
   .topbar nav { display: none; }
   .log li { grid-template-columns: 1fr; gap: .1rem; }
 }
+
+/* ---------- selection d'utilisateurs existants ---------- */
+.picker { list-style: none; margin: .4rem 0 0; padding: 0; max-height: 220px;
+          overflow-y: auto; border-radius: 8px; }
+.picker:not(:empty) { border: 1px solid var(--border); }
+.picker li { display: flex; justify-content: space-between; align-items: baseline;
+             gap: .8rem; padding: .4rem .6rem; cursor: pointer;
+             border-bottom: 1px solid var(--border); }
+.picker li:last-child { border-bottom: none; }
+.picker li:hover { background: var(--bg); }
+.pick-name { font-weight: 500; }
+.pick-upn { font-family: ui-monospace, Consolas, monospace; font-size: .78rem;
+            color: var(--muted); }

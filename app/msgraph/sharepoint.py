@@ -29,13 +29,20 @@ class SharePointError(Exception):
     pass
 
 
-def slugify(value: str, max_length: int = 60) -> str:
-    """Alias d'URL sur pour un site SharePoint (ASCII, sans espace)."""
+def slugify(value: str, max_length: int = 60, fallback: str = "") -> str:
+    """Alias ASCII sans espace, pour une URL de site ou une adresse.
+
+    Renvoie `fallback` (vide par defaut) quand il ne reste rien : un repli
+    implicite se retrouverait sinon dans les identifiants construits par
+    assemblage, par exemple un utilisateur sans nom de famille dont l'UPN
+    deviendrait « prenom.site@… ». Les appelants qui veulent un repli le
+    demandent explicitement.
+    """
     normalized = unicodedata.normalize("NFKD", value or "")
     ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^A-Za-z0-9]+", "-", ascii_only).strip("-")
     slug = re.sub(r"-{2,}", "-", slug)
-    return (slug[:max_length].strip("-") or "site").lower()
+    return (slug[:max_length].strip("-") or fallback).lower()
 
 
 def mail_nickname(value: str) -> str:
