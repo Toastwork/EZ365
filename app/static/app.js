@@ -85,26 +85,27 @@ function addShortcutChip(select) {
   select.value = "";
   if (!value) { return; }
   const folder = value === "__root__" ? "" : value;
-  const cell = select.closest("td");
+  const cell = select.closest(".shortcut-cell");
   const list = shortcutsOf(cell);
   if (list.indexOf(folder) !== -1) { return; }
   list.push(folder);
   cell.querySelector("input[type=hidden]").value = JSON.stringify(list);
   renderChips(cell);
 
-  // Un raccourci suppose un OneDrive : on coche la case de la ligne.
-  const row = select.closest("tr");
-  const flag = row.querySelector("input[name$=_onedrive]");
+  // Un raccourci suppose un OneDrive : on coche la case de la fiche.
+  const card = select.closest(".person-card");
+  const flag = card && card.querySelector("input[name$=_onedrive]");
   if (flag && flag.value !== "1") {
     flag.value = "1";
-    const box = row.querySelector("input[type=checkbox]");
+    const box = card.querySelector("input[type=checkbox]");
     if (box) { box.checked = true; }
   }
 }
 
 function syncOnedrive(box) {
-  const hidden = box.closest("td").querySelector("input[type=hidden]");
-  hidden.value = box.checked ? "1" : "0";
+  const scope = box.closest("label") || box.parentElement;
+  const hidden = scope.querySelector("input[type=hidden]");
+  if (hidden) { hidden.value = box.checked ? "1" : "0"; }
 }
 
 async function loadFolders(siteId) {
@@ -229,47 +230,85 @@ function addExistingUser(user) {
   const name = user.displayName || upn;
   if (pickedUpns().indexOf(upn.toLowerCase()) !== -1) { return; }
 
-  const body = document.getElementById("existing-body");
-  const row = document.createElement("tr");
+  const container = document.getElementById("existing-body");
+  const card = document.createElement("div");
+  card.className = "person-card existing";
 
-  const cellUser = document.createElement("td");
-  cellUser.innerHTML =
-    '<span class="strong"></span><div class="muted mono small"></div>' +
-    '<input type="hidden" name="existing_upn"><input type="hidden" name="existing_name">';
-  cellUser.children[0].textContent = name;
-  cellUser.children[1].textContent = upn;
-  cellUser.querySelector("input[name=existing_upn]").value = upn;
-  cellUser.querySelector("input[name=existing_name]").value = name;
+  // -- en-tete : identite et retrait ---------------------------------------
+  const head = document.createElement("div");
+  head.className = "person-head";
+  const who = document.createElement("div");
+  who.innerHTML = '<span class="person-title"></span>' +
+                  '<div class="muted mono small"></div>' +
+                  '<input type="hidden" name="existing_upn">' +
+                  '<input type="hidden" name="existing_name">';
+  who.children[0].textContent = name;
+  who.children[1].textContent = upn;
+  who.querySelector("input[name=existing_upn]").value = upn;
+  who.querySelector("input[name=existing_name]").value = name;
 
-  const cellCurrent = document.createElement("td");
-  cellCurrent.className = "small";
+  const drop = document.createElement("button");
+  drop.type = "button";
+  drop.className = "btn btn-small";
+  drop.textContent = "Retirer";
+  drop.onclick = function () {
+    card.remove();
+    if (!container.children.length) {
+      document.getElementById("existing-table").classList.add("hidden");
+    }
+  };
+  head.appendChild(who);
+  head.appendChild(drop);
+
+  // -- licences en place ----------------------------------------------------
+  const current = document.createElement("div");
+  current.className = "person-licences small";
+  const caption = document.createElement("span");
+  caption.className = "muted";
+  caption.textContent = "Licences actuelles :";
+  current.appendChild(caption);
   if (user.licenses && user.licenses.length) {
-    user.licenses.forEach(function (name) {
+    user.licenses.forEach(function (licence) {
       const pill = document.createElement("span");
       pill.className = "pill pill-ok lic";
-      pill.textContent = name;
-      cellCurrent.appendChild(pill);
+      pill.textContent = licence;
+      current.appendChild(pill);
     });
   } else {
-    cellCurrent.innerHTML = '<span class="pill pill-warn">sans licence</span>';
+    const pill = document.createElement("span");
+    pill.className = "pill pill-warn";
+    pill.textContent = "sans licence";
+    current.appendChild(pill);
   }
 
-  const cellSku = document.createElement("td");
+  // -- reglages -------------------------------------------------------------
+  const grid = document.createElement("div");
+  grid.className = "person-grid";
+
+  const skuBlock = document.createElement("div");
+  const skuLabel = document.createElement("label");
+  skuLabel.textContent = "Licence a ajouter";
   const skuSelect = skuOptions("— ne rien changer —");
   skuSelect.name = "existing_sku";
-  cellSku.appendChild(skuSelect);
+  skuBlock.appendChild(skuLabel);
+  skuBlock.appendChild(skuSelect);
+  grid.appendChild(skuBlock);
+
+  const foot = document.createElement("div");
+  foot.className = "person-foot";
 
   // OneDrive : decoche par defaut, un compte en place a souvent deja le sien.
-  const cellDrive = document.createElement("td");
-  cellDrive.className = "center";
-  cellDrive.innerHTML =
+  const driveLabel = document.createElement("label");
+  driveLabel.className = "check";
+  driveLabel.innerHTML =
     '<input type="hidden" name="existing_onedrive" value="0" data-default="0">' +
-    '<input type="checkbox" onchange="syncOnedrive(this)"' +
-    ' title="Provisionner le OneDrive de cette personne">';
+    '<input type="checkbox" onchange="syncOnedrive(this)"> Provisionner le OneDrive';
+  foot.appendChild(driveLabel);
 
-  const cellFolder = document.createElement("td");
-  cellFolder.className = "shortcut-cell";
-  cellFolder.innerHTML =
+  const shortcuts = document.createElement("div");
+  shortcuts.className = "shortcut-cell";
+  shortcuts.innerHTML =
+    '<label>Raccourcis vers le site</label>' +
     '<input type="hidden" name="existing_shortcuts" value="[]" data-default="[]">' +
     '<div class="chips"></div>';
   const folderSelect = document.createElement("select");
@@ -281,24 +320,15 @@ function addExistingUser(user) {
   rootOption.dataset.static = "1";
   folderSelect.appendChild(placeholder);
   folderSelect.appendChild(rootOption);
-  cellFolder.appendChild(folderSelect);
+  shortcuts.appendChild(folderSelect);
+  foot.appendChild(shortcuts);
 
-  const cellAction = document.createElement("td");
-  cellAction.innerHTML = '<button type="button" class="btn btn-small">×</button>';
-  cellAction.firstChild.onclick = function () {
-    row.remove();
-    if (!body.rows.length) {
-      document.getElementById("existing-table").classList.add("hidden");
-    }
-  };
-
-  [cellUser, cellCurrent, cellSku, cellDrive, cellFolder, cellAction].forEach(function (cell) {
-    row.appendChild(cell);
-  });
-  body.appendChild(row);
+  [head, current, grid, foot].forEach(function (block) { card.appendChild(block); });
+  container.appendChild(card);
   document.getElementById("existing-table").classList.remove("hidden");
   applyFolders();
 }
+
 
 function suggestPath(value) {
   const path = document.getElementById("site_path");
@@ -306,47 +336,63 @@ function suggestPath(value) {
 }
 
 function suggestAlias(input) {
-  const row = input.closest("tr");
-  const alias = row.querySelector("input[name=alias]");
+  const card = input.closest(".person-card");
+  const alias = card.querySelector("input[name=alias]");
   if (alias.dataset.touched) { return; }
-  const first = slug(row.querySelector("input[name=first_name]").value);
-  const last = slug(row.querySelector("input[name=last_name]").value);
+  const first = slug(card.querySelector("input[name=first_name]").value);
+  const last = slug(card.querySelector("input[name=last_name]").value);
   alias.value = [first, last].filter(Boolean).join(".");
 }
 
 function addRow() {
-  const body = document.getElementById("users-body");
-  // Le clone reprend la liste de dossiers deja chargee dans la 1re ligne ;
+  const list = document.getElementById("users-list");
+  // Le clone reprend la liste de dossiers deja chargee dans la 1re fiche ;
   // seules les valeurs saisies sont remises a zero.
-  const row = body.rows[0].cloneNode(true);
-  row.querySelectorAll("input:not([type=hidden]):not([type=checkbox])").forEach(function (input) {
+  const card = list.firstElementChild.cloneNode(true);
+  card.querySelectorAll("input:not([type=hidden]):not([type=checkbox])").forEach(function (input) {
     input.value = "";
     delete input.dataset.touched;
   });
-  row.querySelectorAll("input[type=hidden]").forEach(function (hidden) {
+  card.querySelectorAll("input[type=hidden]").forEach(function (hidden) {
     hidden.value = hidden.dataset.default || "";
   });
-  row.querySelectorAll("input[type=checkbox]").forEach(function (box) {
-    const hidden = box.closest("td").querySelector("input[type=hidden]");
+  card.querySelectorAll("input[type=checkbox]").forEach(function (box) {
+    const scope = box.closest("label") || box.parentElement;
+    const hidden = scope.querySelector("input[type=hidden]");
     box.checked = !hidden || hidden.value === "1";
   });
-  row.querySelectorAll("select").forEach(function (select) {
-    select.selectedIndex = 0;
+  card.querySelectorAll("select").forEach(function (select) { select.selectedIndex = 0; });
+  card.querySelectorAll(".chips").forEach(function (chips) { chips.innerHTML = ""; });
+  list.appendChild(card);
+  renumberCards();
+  card.querySelector("input:not([type=hidden])").focus();
+}
+
+// Les fiches sont numerotees pour se reperer quand la liste s'allonge.
+function renumberCards() {
+  const cards = document.querySelectorAll("#users-list .person-card");
+  cards.forEach(function (card, index) {
+    card.querySelector(".person-title").textContent =
+      cards.length > 1 ? "Utilisateur " + (index + 1) : "Nouvel utilisateur";
   });
-  row.querySelectorAll(".chips").forEach(function (chips) { chips.innerHTML = ""; });
-  body.appendChild(row);
-  row.querySelector("input:not([type=hidden])").focus();
 }
 
 function removeRow(button) {
-  const body = document.getElementById("users-body");
-  if (body.rows.length > 1) {
-    button.closest("tr").remove();
+  const list = document.getElementById("users-list");
+  const card = button.closest(".person-card");
+  if (list.children.length > 1) {
+    card.remove();
   } else {
-    const row = button.closest("tr");
-    row.querySelectorAll("input").forEach(function (i) { i.value = ""; });
-    row.querySelectorAll("select").forEach(function (s) { s.selectedIndex = 0; });
+    card.querySelectorAll("input:not([type=hidden]):not([type=checkbox])").forEach(function (i) {
+      i.value = "";
+    });
+    card.querySelectorAll("input[type=hidden]").forEach(function (h) {
+      h.value = h.dataset.default || "";
+    });
+    card.querySelectorAll(".chips").forEach(function (c) { c.innerHTML = ""; });
+    card.querySelectorAll("select").forEach(function (sel) { sel.selectedIndex = 0; });
   }
+  renumberCards();
 }
 
 async function reloadCollections(orgId) {
@@ -369,9 +415,12 @@ async function reloadCollections(orgId) {
 }
 
 function confirmProvision(form) {
-  const rows = Array.from(document.querySelectorAll("#users-body tr")).filter(function (tr) {
-    return Array.from(tr.querySelectorAll("input")).some(function (i) { return i.value.trim(); });
-  }).length;
+  const rows = Array.from(document.querySelectorAll("#users-list .person-card"))
+    .filter(function (card) {
+      return Array.from(card.querySelectorAll(
+        "input[name=first_name], input[name=last_name], input[name=alias]"
+      )).some(function (i) { return i.value.trim(); });
+    }).length;
   const bulk = (form.querySelector("[name=bulk_users]").value || "")
     .split("\n").filter(function (l) { return l.trim() && !l.startsWith("#"); }).length;
   const existing = pickedUpns().length;
@@ -417,7 +466,17 @@ document.addEventListener("input", function (event) {
   }
 });
 
+function refreshDomain() {
+  const field = document.getElementById("user_domain");
+  const domain = ((field && field.value) || "").trim();
+  document.querySelectorAll(".upn-domain").forEach(function (span) {
+    span.textContent = domain ? "@" + domain : "@…";
+  });
+}
+
 document.addEventListener("DOMContentLoaded", function () {
   const checked = document.querySelector("input[name=site_mode]:checked");
   if (checked) { siteMode(checked.value); }
+  const domain = document.getElementById("user_domain");
+  if (domain) { domain.addEventListener("input", refreshDomain); }
 });

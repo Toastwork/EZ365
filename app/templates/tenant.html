@@ -142,53 +142,70 @@
       <p class="muted small mt">Aucune licence lisible sur ce tenant.</p>
     {% endif %}
 
-    <div class="table-scroll mt">
-      <table class="table compact" id="users-table">
-        <thead>
-          <tr>
-            <th>Prenom</th><th>Nom</th><th>Alias <span class="muted small">(avant @)</span></th>
-            <th>Fonction</th><th>Service</th>
-            <th>Licence</th><th title="Provisionner le OneDrive">OneDrive</th>
-            <th>Raccourcis</th><th></th>
-          </tr>
-        </thead>
-        <tbody id="users-body">
-          <tr>
-            <td><input name="first_name" oninput="suggestAlias(this)"></td>
-            <td><input name="last_name" oninput="suggestAlias(this)"></td>
-            <td><input name="alias" placeholder="prenom.nom"></td>
-            <td><input name="job_title"></td>
-            <td><input name="department"></td>
-            <td>
-              <select name="user_sku" class="sku-select">
-                <option value="">— licence par defaut —</option>
-                <option value="none">— aucune —</option>
-                {% for s in skus %}
-                  <option value="{{ s.skuId }}|{{ s.skuPartNumber }}" {% if s.available == 0 %}disabled{% endif %}>
-                    {{ s.skuPartNumber }} ({{ s.available }})
-                  </option>
-                {% endfor %}
-              </select>
-            </td>
-            <td class="center">
-              <input type="hidden" name="user_onedrive" value="1" data-default="1">
-              <input type="checkbox" checked onchange="syncOnedrive(this)"
-                     title="Provisionner le OneDrive de cette personne">
-            </td>
-            <td class="shortcut-cell">
-              <input type="hidden" name="user_shortcuts" value="[]" data-default="[]">
-              <div class="chips"></div>
-              <select class="folder-select shortcut-add" onchange="addShortcutChip(this)">
-                <option value="" data-static="1">+ ajouter un raccourci…</option>
-                <option value="__root__" data-static="1">Bibliotheque entiere (racine)</option>
-              </select>
-            </td>
-            <td><button type="button" class="btn btn-small" onclick="removeRow(this)">×</button></td>
-          </tr>
-        </tbody>
-      </table>
+    <div id="users-list" class="mt">
+      <div class="person-card">
+        <div class="person-head">
+          <span class="person-title">Nouvel utilisateur</span>
+          <button type="button" class="btn btn-small" onclick="removeRow(this)">Retirer</button>
+        </div>
+
+        <div class="person-grid">
+          <div>
+            <label>Prenom</label>
+            <input name="first_name" oninput="suggestAlias(this)">
+          </div>
+          <div>
+            <label>Nom</label>
+            <input name="last_name" oninput="suggestAlias(this)">
+          </div>
+          <div>
+            <label>Adresse de connexion</label>
+            <div class="upn-row">
+              <input name="alias" placeholder="prenom.nom">
+              <span class="upn-domain">@{{ tenant.default_domain }}</span>
+            </div>
+          </div>
+          <div>
+            <label>Licence</label>
+            <select name="user_sku" class="sku-select">
+              <option value="">— licence par defaut —</option>
+              <option value="none">— aucune —</option>
+              {% for s in skus %}
+                <option value="{{ s.skuId }}|{{ s.skuPartNumber }}" {% if s.available == 0 %}disabled{% endif %}>
+                  {{ s.skuPartNumber }} ({{ s.available }} dispo.)
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label>Fonction</label>
+            <input name="job_title" placeholder="Comptable">
+          </div>
+          <div>
+            <label>Service</label>
+            <input name="department" placeholder="Finance">
+          </div>
+        </div>
+
+        <div class="person-foot">
+          <label class="check">
+            <input type="hidden" name="user_onedrive" value="1" data-default="1">
+            <input type="checkbox" checked onchange="syncOnedrive(this)">
+            Provisionner le OneDrive
+          </label>
+          <div class="shortcut-cell">
+            <label>Raccourcis vers le site</label>
+            <input type="hidden" name="user_shortcuts" value="[]" data-default="[]">
+            <div class="chips"></div>
+            <select class="folder-select shortcut-add" onchange="addShortcutChip(this)">
+              <option value="" data-static="1">+ ajouter un raccourci…</option>
+              <option value="__root__" data-static="1">Bibliotheque entiere (racine)</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
-    <button type="button" class="btn btn-small" onclick="addRow()">+ Ajouter une ligne</button>
+    <button type="button" class="btn" onclick="addRow()">+ Ajouter un utilisateur</button>
 
     <details class="mt" id="existing-users">
       <summary class="muted">Ajouter des utilisateurs deja presents sur le tenant</summary>
@@ -203,17 +220,8 @@
       <p id="user-search-status" class="muted small mt"></p>
       <ul id="user-results" class="picker"></ul>
 
-      <div class="table-scroll mt hidden" id="existing-table">
-        <table class="table compact">
-          <thead>
-            <tr>
-              <th>Utilisateur retenu</th><th>Licences actuelles</th>
-              <th>Licence a ajouter</th><th title="Provisionner le OneDrive">OneDrive</th>
-              <th>Raccourcis</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="existing-body"></tbody>
-        </table>
+      <div id="existing-table" class="hidden mt">
+        <div id="existing-body"></div>
       </div>
     </details>
 
@@ -265,5 +273,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v={{ asset_v }}"></script>
 {% endblock %}

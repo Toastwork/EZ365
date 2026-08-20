@@ -200,10 +200,8 @@ textarea { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
 .pick-lic-none { color: var(--muted); font-style: italic; }
 .picker li { display: grid; grid-template-columns: 1fr 1fr auto; }
 
-/* Les tableaux d'utilisateurs sont larges : ils defilent dans leur cadre
-   plutot que d'elargir la page. */
+/* Conserve pour les tableaux larges du journal. */
 .table-scroll { overflow-x: auto; }
-.table-scroll .table { min-width: 900px; }
 .table.compact select { padding: .3rem .35rem; font-size: .84rem; }
 .lic { margin: 0 .2rem .2rem 0; }
 
@@ -222,3 +220,49 @@ textarea { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
 .table.compact td.center input[type=checkbox] { margin: .35rem 0; }
 .shortcut-line { display: flex; gap: .35rem; align-items: baseline; margin-bottom: .15rem; }
 .shortcut-line .mono { font-size: .78rem; color: var(--muted); }
+
+/* ---------- fiches utilisateur (presentation verticale) ---------- */
+#users-list, #existing-body { display: flex; flex-direction: column; gap: .8rem; }
+
+.person-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: .9rem 1rem; background: var(--bg);
+}
+.person-card.existing { border-left: 3px solid var(--accent); }
+
+.person-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; margin-bottom: .7rem;
+}
+.person-title { font-weight: 600; font-size: .92rem; }
+
+.person-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: .7rem .9rem;
+}
+
+.person-licences { display: flex; flex-wrap: wrap; align-items: center;
+                   gap: .3rem; margin-bottom: .7rem; }
+
+.person-foot {
+  display: grid; grid-template-columns: minmax(200px, 1fr) 2fr; gap: .9rem;
+  align-items: start;
+  margin-top: .8rem; padding-top: .8rem; border-top: 1px solid var(--border);
+}
+.person-foot .check { margin-top: 1.4rem; }
+
+/* Adresse de connexion : champ + domaine colles */
+.upn-row { display: flex; align-items: stretch; }
+.upn-row input { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.upn-domain {
+  display: flex; align-items: center; padding: 0 .55rem;
+  border: 1px solid var(--border); border-left: none;
+  border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+  background: var(--surface); color: var(--muted); font-size: .84rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .person-foot { grid-template-columns: 1fr; }
+  .person-foot .check { margin-top: 0; }
+}

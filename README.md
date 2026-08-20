@@ -122,6 +122,17 @@ d'environnement manquantes.
    ligne ou collage depuis Excel), les licences, puis lancer. Le journal
    s'affiche en direct et reste consultable ensuite.
 
+### Presentation
+
+Chaque personne occupe une **fiche** : identite et licence en haut, options de
+traitement en bas. Les fiches s'empilent verticalement plutot que de s'etaler
+en colonnes, un tableau devenant illisible des que chaque ligne porte licence,
+OneDrive et raccourcis.
+
+L'adresse de connexion se construit sous les yeux de l'operateur (`prenom.nom`
++ domaine du tenant) et se deduit du prenom et du nom tant qu'on ne l'a pas
+saisie a la main.
+
 ### OneDrive et raccourcis, par utilisateur
 
 Il n'y a pas de reglage global : chaque ligne du tableau porte ses propres
