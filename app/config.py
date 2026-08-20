@@ -52,6 +52,7 @@ class Settings:
     vault_api_url: str = field(default_factory=lambda: _str("VAULT_API_URL").rstrip("/"))
 
     # --- Divers -----------------------------------------------------------
+    build_ref: str = field(default_factory=lambda: _str("EZ365_BUILD", "dev"))
     host: str = field(default_factory=lambda: _str("HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: int(_str("PORT", "8000")))
 

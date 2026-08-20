@@ -28,6 +28,9 @@ def _asset_version() -> str:
     Sans elle, le navigateur garde en cache l'ancien CSS/JS apres une mise a
     jour de l'image : l'interface se retrouve a moitie neuve, a moitie ancienne.
     """
+    build = (os.getenv("EZ365_BUILD") or "").strip()
+    if build and build != "dev":
+        return hashlib.sha1(build.encode()).hexdigest()[:10]
     static = os.path.join(BASE_DIR, "static")
     stamps = []
     try:
@@ -41,6 +44,7 @@ def _asset_version() -> str:
 templates.env.filters["dt"] = _fr_datetime
 templates.env.globals["app_name"] = "EZ365"
 templates.env.globals["asset_v"] = _asset_version()
+templates.env.globals["build_ref"] = (os.getenv("EZ365_BUILD") or "dev").strip()
 
 
 def render(request: Request, name: str, context: dict | None = None, status_code: int = 200):

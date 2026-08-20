@@ -288,3 +288,4 @@ textarea { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
 .folder-add-row input { flex: 1; }
 .folder-add-row .btn { white-space: nowrap; }
 #site-folders .muted { margin: .35rem 0 0; }
+.footer .build { margin-left: .6rem; opacity: .7; font-family: ui-monospace, Consolas, monospace; }

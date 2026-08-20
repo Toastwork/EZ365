@@ -18,6 +18,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY run.py .
 
+# Renseignee par la CI (docker build --build-arg BUILD_REF=...) : elle apparait
+# dans le pied de page, dans /healthz et dans les logs de demarrage, ce qui
+# permet de savoir quelle version tourne reellement.
+ARG BUILD_REF=dev
+ENV EZ365_BUILD=$BUILD_REF
+
 VOLUME ["/data"]
 EXPOSE 8000
 
