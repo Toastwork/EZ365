@@ -146,6 +146,22 @@
       Changement du mot de passe a la 1re connexion
     </label>
 
+    <div class="shortcut-cell common-block" id="common-shortcuts">
+      <label>Raccourcis communs
+        <span class="muted small">— poses sur toutes les fiches</span>
+      </label>
+      <input type="hidden" name="common_shortcuts" value="[]">
+      <div class="chips"></div>
+      <select class="folder-select shortcut-add" onchange="addCommonShortcut(this)">
+        <option value="" data-static="1">+ ajouter un raccourci commun…</option>
+        <option value="__root__" data-static="1">Bibliotheque entiere (racine)</option>
+      </select>
+      <p class="muted small">
+        Chaque fiche le recoit aussitot, y compris celles ajoutees ensuite.
+        Pour en dispenser quelqu'un, retirez la pastille sur sa fiche.
+      </p>
+    </div>
+
     <div id="users-list" class="mt">
       <div class="person-card">
         <div class="person-head">

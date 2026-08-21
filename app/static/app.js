@@ -78,11 +78,41 @@ function renderChips(cell) {
       cell.querySelector("input[type=hidden]").value = JSON.stringify(next);
       renderChips(cell);
       if (cell.id === "site-folders") { syncPlannedFolders(); }
+      if (cell.id === "common-shortcuts") { removeCommonFromCards(folder); }
     };
     chip.appendChild(label);
     chip.appendChild(remove);
     chips.appendChild(chip);
   });
+}
+
+// Un raccourci suppose un OneDrive : sans lui, nulle part ou le poser.
+function tickOnedrive(card) {
+  const flag = card && card.querySelector("input[name$=_onedrive]");
+  if (flag && flag.value !== "1") {
+    flag.value = "1";
+    const box = card.querySelector("input[type=checkbox]");
+    if (box) { box.checked = true; }
+  }
+}
+
+function pushFolder(cell, folder) {
+  const list = shortcutsOf(cell);
+  if (list.indexOf(folder) !== -1) { return false; }
+  list.push(folder);
+  cell.querySelector("input[type=hidden]").value = JSON.stringify(list);
+  renderChips(cell);
+  return true;
+}
+
+function dropFolder(cell, folder) {
+  const list = shortcutsOf(cell);
+  const at = list.indexOf(folder);
+  if (at === -1) { return false; }
+  list.splice(at, 1);
+  cell.querySelector("input[type=hidden]").value = JSON.stringify(list);
+  renderChips(cell);
+  return true;
 }
 
 function addShortcutChip(select) {
@@ -91,20 +121,51 @@ function addShortcutChip(select) {
   if (!value) { return; }
   const folder = value === "__root__" ? "" : value;
   const cell = select.closest(".shortcut-cell");
-  const list = shortcutsOf(cell);
-  if (list.indexOf(folder) !== -1) { return; }
-  list.push(folder);
-  cell.querySelector("input[type=hidden]").value = JSON.stringify(list);
-  renderChips(cell);
-
-  // Un raccourci suppose un OneDrive : on coche la case de la fiche.
-  const card = select.closest(".person-card");
-  const flag = card && card.querySelector("input[name$=_onedrive]");
-  if (flag && flag.value !== "1") {
-    flag.value = "1";
-    const box = card.querySelector("input[type=checkbox]");
-    if (box) { box.checked = true; }
+  if (pushFolder(cell, folder)) {
+    tickOnedrive(select.closest(".person-card"));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Raccourcis communs : poses sur toutes les fiches, retirables une a une
+// ---------------------------------------------------------------------------
+function commonCell() {
+  return document.getElementById("common-shortcuts");
+}
+
+function personCards() {
+  return document.querySelectorAll(
+    "#users-list .person-card, #existing-body .person-card"
+  );
+}
+
+function applyCommonTo(card) {
+  const cell = card.querySelector(".shortcut-cell");
+  if (!cell) { return; }
+  shortcutsOf(commonCell()).forEach(function (folder) {
+    if (pushFolder(cell, folder)) { tickOnedrive(card); }
+  });
+}
+
+function addCommonShortcut(select) {
+  const value = select.value;
+  select.value = "";
+  if (!value) { return; }
+  const folder = value === "__root__" ? "" : value;
+  pushFolder(commonCell(), folder);
+  personCards().forEach(function (card) {
+    const cell = card.querySelector(".shortcut-cell");
+    if (cell && pushFolder(cell, folder)) { tickOnedrive(card); }
+  });
+}
+
+// Retirer un raccourci commun le retire de toutes les fiches : une exception
+// individuelle se fait en enlevant la pastille sur la fiche concernee.
+function removeCommonFromCards(folder) {
+  personCards().forEach(function (card) {
+    const cell = card.querySelector(".shortcut-cell");
+    if (cell) { dropFolder(cell, folder); }
+  });
 }
 
 // Une case a cocher non cochee n'est pas envoyee : chacune est doublee d'un
@@ -421,6 +482,7 @@ function addExistingUser(user) {
   container.appendChild(card);
   document.getElementById("existing-table").classList.remove("hidden");
   applyFolders();
+  applyCommonTo(card);
 }
 
 
@@ -461,6 +523,7 @@ function addRow() {
   list.appendChild(card);
   renumberCards();
   refreshVaultName(card);
+  applyCommonTo(card);
   card.querySelector("input:not([type=hidden])").focus();
 }
 

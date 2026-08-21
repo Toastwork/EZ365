@@ -170,6 +170,12 @@ options, pour maitriser exactement ce qui est applique a qui.
 * **OneDrive** — une case par ligne declenche (et attend) le provisionnement.
   Cochee par defaut pour un nouveau compte, decochee pour un compte existant
   qui a souvent deja le sien.
+* **Raccourcis communs** — un bloc au-dessus des fiches permet de designer un
+  dossier (par exemple « Commun ») pose d'office sur **toutes** les fiches, y
+  compris celles ajoutees ensuite et les comptes existants. Pour en dispenser
+  quelqu'un, il suffit de retirer la pastille sur sa fiche : l'exception tient,
+  meme si un autre raccourci commun est ajoute apres. Retirer la pastille du
+  bloc commun, en revanche, l'enleve partout.
 * **Raccourcis** — chaque personne peut en recevoir **plusieurs**. Quand un
   site existant est choisi, les dossiers de sa bibliotheque « Documents » sont
   lus et proposes (deux niveaux, 300 dossiers au maximum) ; on les ajoute un a

@@ -293,3 +293,8 @@ textarea { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
                 padding-top: .8rem; border-top: 1px solid var(--border); }
 select.upn-domain { width: auto; max-width: 45%; border-left: none;
                     border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
+/* ---------- raccourcis communs ---------- */
+.common-block { border: 1px dashed var(--border); border-radius: var(--radius);
+                padding: .8rem 1rem; margin-top: .9rem; }
+.common-block .muted { margin: .35rem 0 0; }
