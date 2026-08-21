@@ -8,6 +8,44 @@ function slug(value) {
     .toLowerCase();
 }
 
+// ---------------------------------------------------------------------------
+// Resume affiche a droite de chaque section, lisible meme repliee
+// ---------------------------------------------------------------------------
+function refreshStepInfo() {
+  const mode = document.querySelector("input[name=site_mode]:checked");
+  const modes = {
+    team: "nouveau site d'equipe",
+    communication: "nouveau site de communication",
+    existing: "site existant",
+    none: "aucun site",
+  };
+  let site = modes[mode ? mode.value : "none"] || "";
+  const name = document.querySelector("[name=site_display_name]");
+  if (mode && (mode.value === "team" || mode.value === "communication")
+      && name && name.value.trim()) {
+    site = name.value.trim();
+  }
+  const common = shortcutsOf(commonCell()).length;
+  if (common) { site += " · " + common + " raccourci(s) commun(s)"; }
+  setStepInfo(1, site);
+
+  const filled = Array.from(document.querySelectorAll("#users-list .person-card"))
+    .filter(function (card) {
+      return Array.from(card.querySelectorAll(
+        "input[name=first_name], input[name=last_name], input[name=alias]"
+      )).some(function (i) { return i.value.trim(); });
+    }).length;
+  setStepInfo(2, filled ? filled + " a creer" : "aucun");
+
+  const picked = pickedUpns().length;
+  setStepInfo(3, picked ? picked + " selectionne(s)" : "aucun");
+}
+
+function setStepInfo(step, text) {
+  const target = document.getElementById("step-info-" + step);
+  if (target) { target.textContent = text; }
+}
+
 function siteMode(mode) {
   const isNew = mode === "team" || mode === "communication";
   document.getElementById("site-new").classList.toggle("hidden", !isNew);
@@ -16,6 +54,7 @@ function siteMode(mode) {
   document.getElementById("site-public-row").classList.toggle("hidden", mode !== "team");
 
   document.getElementById("site-folders").classList.toggle("hidden", !isNew);
+  refreshStepInfo();
 
   // Un site existant fournit ses dossiers reels ; un site a creer, ceux que
   // l'operateur prevoit d'y creer.
@@ -79,6 +118,7 @@ function renderChips(cell) {
       renderChips(cell);
       if (cell.id === "site-folders") { syncPlannedFolders(); }
       if (cell.id === "common-shortcuts") { removeCommonFromCards(folder); }
+      refreshStepInfo();
     };
     chip.appendChild(label);
     chip.appendChild(remove);
@@ -157,6 +197,7 @@ function addCommonShortcut(select) {
     const cell = card.querySelector(".shortcut-cell");
     if (cell && pushFolder(cell, folder)) { tickOnedrive(card); }
   });
+  refreshStepInfo();
 }
 
 // Retirer un raccourci commun le retire de toutes les fiches : une exception
@@ -482,6 +523,7 @@ function addExistingUser(user) {
   container.appendChild(card);
   document.getElementById("existing-table").classList.remove("hidden");
   applyFolders();
+  refreshStepInfo();
   applyCommonTo(card);
 }
 
@@ -522,6 +564,7 @@ function addRow() {
   card.querySelectorAll(".chips").forEach(function (chips) { chips.innerHTML = ""; });
   list.appendChild(card);
   renumberCards();
+  refreshStepInfo();
   refreshVaultName(card);
   applyCommonTo(card);
   card.querySelector("input:not([type=hidden])").focus();
@@ -552,6 +595,7 @@ function removeRow(button) {
     card.querySelectorAll("select").forEach(function (sel) { sel.selectedIndex = 0; });
   }
   renumberCards();
+  refreshStepInfo();
 }
 
 async function reloadCollections(orgId) {
@@ -620,6 +664,9 @@ function confirmProvision(form) {
 // Un champ rempli a la main ne doit plus etre ecrase par les suggestions.
 document.addEventListener("input", function (event) {
   const target = event.target;
+  if (["first_name", "last_name", "alias", "site_display_name"].indexOf(target.name) !== -1) {
+    refreshStepInfo();
+  }
   if (target.name === "alias" || target.id === "site_path"
       || target.classList.contains("vault-name")) {
     target.dataset.touched = "1";
@@ -663,4 +710,5 @@ function confirmSiteCreation() {
 document.addEventListener("DOMContentLoaded", function () {
   const checked = document.querySelector("input[name=site_mode]:checked");
   if (checked) { siteMode(checked.value); }
+  refreshStepInfo();
 });

@@ -148,10 +148,23 @@ sont ecartes avec un avertissement dans le journal, sans interrompre le reste.
 
 ### Presentation
 
+Le formulaire est decoupe en trois sections repliables :
+
+| | Section | Contenu |
+|---|---|---|
+| 1 | Site SharePoint | choix ou creation du site, dossiers a creer, raccourcis communs |
+| 2 | Nouveaux utilisateurs | fiches des comptes a creer, collage en masse |
+| 3 | Utilisateurs deja presents | recherche et fiches des comptes existants |
+
+Les sections 1 et 2 sont ouvertes au chargement, la 3 repliee. Chaque en-tete
+porte un resume a droite — « site existant · 2 raccourcis communs », « 3 a
+creer », « 1 selectionne » — qui reste lisible section fermee : on garde une
+vue d'ensemble sans tout derouler.
+
 Chaque personne occupe une **fiche** : identite et licence en haut, options de
 traitement en bas. Les fiches s'empilent verticalement plutot que de s'etaler
 en colonnes, un tableau devenant illisible des que chaque ligne porte licence,
-OneDrive et raccourcis.
+OneDrive, raccourcis et coffre.
 
 L'adresse de connexion se construit sous les yeux de l'operateur : l'alias se
 deduit du prenom et du nom tant qu'on ne l'a pas saisi, et le **domaine se

@@ -64,8 +64,13 @@
   <h2>Provisionner</h2>
 
   <!-- ============ SharePoint ============ -->
-  <section>
-    <h3>1 · Site SharePoint</h3>
+  <details class="step-section" open>
+    <summary>
+      <span class="step-num">1</span>
+      <span class="step-title">Site SharePoint</span>
+      <span class="step-info" id="step-info-1"></span>
+    </summary>
+    <div class="step-body">
     <div class="radios">
       <label><input type="radio" name="site_mode" value="team" checked onchange="siteMode(this.value)"> Nouveau site d'equipe <span class="muted small">(groupe Microsoft 365)</span></label>
       <label><input type="radio" name="site_mode" value="communication" onchange="siteMode(this.value)"> Nouveau site de communication</label>
@@ -133,18 +138,7 @@
       </select>
       <p id="folder-status" class="muted small mt"></p>
     </div>
-  </section>
 
-  <!-- ============ Utilisateurs ============ -->
-  <section>
-    <h3>2 · Utilisateurs</h3>
-    {% if not skus %}
-      <p class="muted small">Aucune licence lisible sur ce tenant.</p>
-    {% endif %}
-    <label class="check">
-      <input type="checkbox" name="force_change" checked>
-      Changement du mot de passe a la 1re connexion
-    </label>
 
     <div class="shortcut-cell common-block" id="common-shortcuts">
       <label>Raccourcis communs
@@ -161,7 +155,23 @@
         Pour en dispenser quelqu'un, retirez la pastille sur sa fiche.
       </p>
     </div>
+    </div>
+  </details>
 
+  <details class="step-section" open>
+    <summary>
+      <span class="step-num">2</span>
+      <span class="step-title">Nouveaux utilisateurs</span>
+      <span class="step-info" id="step-info-2"></span>
+    </summary>
+    <div class="step-body">
+    {% if not skus %}
+      <p class="muted small">Aucune licence lisible sur ce tenant.</p>
+    {% endif %}
+    <label class="check">
+      <input type="checkbox" name="force_change" checked>
+      Changement du mot de passe a la 1re connexion
+    </label>
     <div id="users-list" class="mt">
       <div class="person-card">
         <div class="person-head">
@@ -246,7 +256,21 @@
     </div>
     <button type="button" class="btn" onclick="addRow()">+ Ajouter un utilisateur</button>
 
-    <details class="mt" id="existing-users">
+    <details class="mt">
+      <summary class="muted">Coller une liste (Excel, CSV)</summary>
+      <p class="muted small mt">Une ligne par personne : <code>Prenom;Nom;alias;Fonction;Service;Dossier</code>. Tabulations et virgules acceptees ; la derniere colonne est facultative.</p>
+      <textarea name="bulk_users" rows="5" placeholder="Marie;Dupont;marie.dupont;Comptable;Finance;Comptabilite"></textarea>
+    </details>
+    </div>
+  </details>
+
+  <details class="step-section">
+    <summary>
+      <span class="step-num">3</span>
+      <span class="step-title">Utilisateurs deja presents sur le tenant</span>
+      <span class="step-info" id="step-info-3"></span>
+    </summary>
+    <div class="step-body">
       <summary class="muted">Ajouter des utilisateurs deja presents sur le tenant</summary>
       <p class="muted small mt">
         Ces comptes ne sont ni crees ni modifies et ne vont pas au coffre :
@@ -262,14 +286,9 @@
       <div id="existing-table" class="hidden mt">
         <div id="existing-body"></div>
       </div>
-    </details>
+    </div>
+  </details>
 
-    <details class="mt">
-      <summary class="muted">Coller une liste (Excel, CSV)</summary>
-      <p class="muted small mt">Une ligne par personne : <code>Prenom;Nom;alias;Fonction;Service;Dossier</code>. Tabulations et virgules acceptees ; la derniere colonne est facultative.</p>
-      <textarea name="bulk_users" rows="5" placeholder="Marie;Dupont;marie.dupont;Comptable;Finance;Comptabilite"></textarea>
-    </details>
-  </section>
 
   <div class="actions">
     <button class="btn btn-primary btn-lg" type="submit">Lancer le provisionnement</button>
