@@ -61,6 +61,19 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit(ts DESC);
 
+-- Sites crees par EZ365 ou designes a la main par leur adresse. Un site tout
+-- juste cree peut manquer quelques minutes a l'enumeration Graph : on les
+-- retient pour les proposer sans attendre.
+CREATE TABLE IF NOT EXISTS sites (
+    tenant_id    TEXT NOT NULL,
+    site_id      TEXT NOT NULL,
+    web_url      TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL DEFAULT '',
+    origin       TEXT NOT NULL DEFAULT 'ez365',   -- ez365 | manuel
+    created_at   TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, site_id)
+);
+
 CREATE TABLE IF NOT EXISTS oauth_states (
     state      TEXT PRIMARY KEY,
     actor      TEXT NOT NULL,
@@ -109,6 +122,43 @@ def query(sql: str, params: Iterable[Any] = ()) -> list[sqlite3.Row]:
 def query_one(sql: str, params: Iterable[Any] = ()) -> sqlite3.Row | None:
     rows = query(sql, params)
     return rows[0] if rows else None
+
+
+def remember_site(tenant_id: str, site: dict, origin: str = "ez365") -> None:
+    """Retient un site pour le proposer sans attendre l'index de recherche."""
+    if not site or not site.get("id"):
+        return
+    execute(
+        "INSERT INTO sites(tenant_id, site_id, web_url, display_name, origin, created_at)"
+        " VALUES (?,?,?,?,?,?)"
+        " ON CONFLICT(tenant_id, site_id) DO UPDATE SET"
+        " web_url = excluded.web_url, display_name = excluded.display_name",
+        (
+            tenant_id,
+            site["id"],
+            site.get("webUrl") or "",
+            site.get("displayName") or site.get("name") or "",
+            origin,
+            now(),
+        ),
+    )
+
+
+def remembered_sites(tenant_id: str) -> list[dict]:
+    rows = query(
+        "SELECT site_id, web_url, display_name, origin FROM sites"
+        " WHERE tenant_id = ? ORDER BY created_at DESC",
+        (tenant_id,),
+    )
+    return [
+        {
+            "id": r["site_id"],
+            "webUrl": r["web_url"],
+            "displayName": r["display_name"],
+            "origin": r["origin"],
+        }
+        for r in rows
+    ]
 
 
 def audit(actor: str, action: str, target: str = "", detail: Any = "") -> None:

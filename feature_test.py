@@ -404,6 +404,68 @@ async def site_group_tests():
 
 asyncio.run(site_group_tests())
 
+# --- un site cree par EZ365 est memorise ---------------------------------
+async def remember_tests():
+    from app import db
+
+    class G:
+        tenant_id = "t-mem"
+        async def sharepoint_hostname(self): return "h.sharepoint.com"
+        async def create_m365_group(self, payload): return {"id": "GRP"}
+        async def get(self, path):
+            return {"id": "h.sharepoint.com,EEE,5", "webUrl": "https://h/sites/neuf"}
+
+    ctx = Ctx(); ctx.tenant_id = "t-mem"
+    site = await provisioning.ensure_site(
+        ctx, G(), {"mode": "team", "display_name": "Site Neuf", "path": "neuf"})
+    check("site d'equipe cree", site["groupId"] == "GRP", site)
+    kept = db.remembered_sites("t-mem")
+    check("site cree memorise avec son nom",
+          len(kept) == 1 and kept[0]["displayName"] == "Site Neuf"
+          and kept[0]["origin"] == "ez365", kept)
+
+asyncio.run(remember_tests())
+
+# --- enumeration des sites : getAllSites, repli sur la recherche ---------
+from app.msgraph.client import _is_technical_site
+for url, attendu in {
+    "https://a.sharepoint.com/": False,
+    "https://a.sharepoint.com/sites/Docs": False,
+    "https://a.sharepoint.com/teams/Projet": False,
+    "https://a-my.sharepoint.com/personal/j_a_fr": True,
+    "https://a.sharepoint.com/sites/appcatalog": True,
+    "https://a.sharepoint.com/sites/ContentTypeHub": True,
+    "https://a.sharepoint.com/search": True,
+    "https://a.sharepoint.com/portals/hub": True,
+    "https://a.sharepoint.com/sites/searchteam": False,
+}.items():
+    check(f"filtrage {url.split('.com')[-1] or '/'} -> {'ecarte' if attendu else 'garde'}",
+          _is_technical_site({"webUrl": url}) is attendu)
+
+async def enum_tests():
+    from app.msgraph.client import GraphClient, GraphError
+
+    class G(GraphClient):
+        def __init__(self, fail): self.fail = fail; self.calls = []
+        async def get_all(self, path, params=None, limit=0):
+            self.calls.append(path)
+            if path == "/sites/getAllSites" and self.fail:
+                raise GraphError(403, "accessDenied", "refuse")
+            return [{"id": "1", "webUrl": "https://a.sharepoint.com/sites/x"},
+                    {"id": "2", "webUrl": "https://a-my.sharepoint.com/personal/y"}]
+
+    g = G(False)
+    r = await g.list_all_sites()
+    check("getAllSites prioritaire", g.calls == ["/sites/getAllSites"], g.calls)
+    check("OneDrive personnels ecartes", [s["id"] for s in r] == ["1"], r)
+
+    g = G(True)
+    r = await g.list_all_sites()
+    check("repli sur la recherche si getAllSites refuse",
+          g.calls == ["/sites/getAllSites", "/sites"] and [s["id"] for s in r] == ["1"], g.calls)
+
+asyncio.run(enum_tests())
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)

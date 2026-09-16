@@ -133,10 +133,23 @@
       <select id="existing_site_id" name="existing_site_id" onchange="loadFolders(this.value)">
         <option value="">— Choisir —</option>
         {% for s in sites %}
-          <option value="{{ s.id }}">{{ s.displayName or s.name }} — {{ s.webUrl }}</option>
+          <option value="{{ s.id }}">{{ s.displayName or s.name }} — {{ s.webUrl }}{% if s.pending_index %}  (ajoute via EZ365){% endif %}</option>
         {% endfor %}
       </select>
       <p id="folder-status" class="muted small mt"></p>
+
+      <div class="site-lookup">
+        <label for="site-url">Site absent de la liste ?</label>
+        <div class="folder-add-row">
+          <input id="site-url" placeholder="https://client.sharepoint.com/sites/NomDuSite"
+                 onkeydown="if (event.key === 'Enter') { event.preventDefault(); resolveSiteUrl(); }">
+          <button type="button" class="btn" onclick="resolveSiteUrl()">Retrouver</button>
+        </div>
+        <p id="site-url-status" class="muted small">
+          Un site tout juste cree peut mettre quelques minutes a apparaitre.
+          Collez son adresse pour le retrouver directement.
+        </p>
+      </div>
     </div>
 
 

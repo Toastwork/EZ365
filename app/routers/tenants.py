@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from .. import db, jobs
-from ..msgraph import oauth
+from ..msgraph import oauth, sharepoint
 from ..msgraph.client import GraphClient, GraphError
 from ..security import Operator, current_operator
 from ..templating import flash, render
@@ -22,6 +22,28 @@ def get_tenant(tenant_id: str) -> dict:
     if row is None:
         raise HTTPException(status_code=404, detail="Tenant inconnu")
     return dict(row)
+
+
+def merge_sites(found: list[dict], remembered: list[dict]) -> list[dict]:
+    """Sites lus sur le tenant + sites connus d'EZ365, sans doublon.
+
+    Un site tout juste cree peut manquer a l'enumeration Graph pendant
+    quelques minutes : ceux qu'EZ365 a crees ou retrouves par leur adresse
+    sont ajoutes, et marques comme tels.
+    """
+    merged: dict[str, dict] = {}
+    for site in found:
+        key = sharepoint.site_key(site.get("id", ""))
+        if key:
+            merged[key] = {**site, "pending_index": False}
+    for site in remembered:
+        key = sharepoint.site_key(site.get("id", ""))
+        if key and key not in merged:
+            merged[key] = {**site, "pending_index": True}
+    return sorted(
+        merged.values(),
+        key=lambda s: (s.get("displayName") or s.get("name") or "").casefold(),
+    )
 
 
 @router.get("/")
@@ -156,7 +178,7 @@ async def tenant_detail(
     try:
         async with GraphClient(tenant_id) as graph:
             skus = [s for s in await graph.subscribed_skus() if s["appliesTo"] == "User"]
-            sites = await graph.search_sites("*")
+            sites = await graph.list_all_sites()
             # Domaines verifies seulement : les autres refusent la creation
             # d'un compte. Le domaine par defaut du tenant vient en tete.
             raw_domains = await graph.domains()
@@ -183,7 +205,7 @@ async def tenant_detail(
             "tenant": tenant,
             "skus": skus,
             "domains": domains or ([tenant["default_domain"]] if tenant.get("default_domain") else []),
-            "sites": sorted(sites, key=lambda s: (s.get("displayName") or "")),
+            "sites": merge_sites(sites, db.remembered_sites(tenant_id)),
             "graph_error": graph_error,
             "vault_ready": vault_ready,
             "vault_message": vault_message,
@@ -252,6 +274,40 @@ async def tenant_forget(
         "info",
     )
     return RedirectResponse("/", status_code=303)
+
+
+@router.get("/api/tenants/{tenant_id}/resolve-site")
+async def resolve_site(
+    tenant_id: str, url: str = Query(""), operator: Operator = Depends(current_operator)
+):
+    """Retrouve un site par son adresse, sans passer par l'index de recherche."""
+    get_tenant(tenant_id)
+    parsed = sharepoint.parse_site_url(url)
+    if not parsed:
+        return JSONResponse(
+            {"error": "Adresse non reconnue : collez l'URL d'un site "
+                      "https://<tenant>.sharepoint.com/sites/<nom>."},
+            status_code=400,
+        )
+    hostname, path = parsed
+    try:
+        async with GraphClient(tenant_id) as graph:
+            site = await graph.site_by_path(hostname, path)
+    except GraphError as exc:
+        return JSONResponse({"error": exc.friendly}, status_code=502)
+    if not site:
+        return JSONResponse(
+            {"error": "Aucun site a cette adresse sur ce tenant."}, status_code=404
+        )
+    db.remember_site(tenant_id, site, origin="manuel")
+    db.audit(operator.username, "site.designe", target=tenant_id, detail=site.get("webUrl"))
+    return JSONResponse(
+        {
+            "id": site["id"],
+            "displayName": site.get("displayName") or site.get("name") or path,
+            "webUrl": site.get("webUrl"),
+        }
+    )
 
 
 @router.get("/api/vault/collections")

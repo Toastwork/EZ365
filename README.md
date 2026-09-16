@@ -132,6 +132,19 @@ C'est utile quand la creation du site et l'arrivee des utilisateurs ne se font
 pas le meme jour : on prepare l'espace documentaire, puis on revient plus tard
 provisionner les comptes en choisissant « site existant ».
 
+### Liste des sites existants
+
+La liste est lue avec `/sites/getAllSites`, qui enumere tout le tenant. La
+recherche `/sites?search=*` n'est qu'un repli : avec un jeton applicatif, elle
+ne renvoie guere que quelques sites systeme et ignore les sites d'equipe lies
+a un groupe. Les OneDrive personnels et les sites d'infrastructure
+(catalogue d'applications, hub de types de contenu, recherche) sont ecartes.
+
+Les sites crees par EZ365 sont en plus memorises et proposes immediatement,
+avec la mention « ajoute via EZ365 ». Un site encore absent se retrouve en
+collant son adresse sous la liste : la resolution passe par son chemin, sans
+dependre d'aucune enumeration.
+
 ### Acces des utilisateurs au site
 
 Un compte n'a de droits sur un site d'equipe que s'il est **membre de son

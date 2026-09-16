@@ -329,3 +329,7 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
 /* ---------- retour de consentement ---------- */
 .consent-actions { display: flex; flex-direction: column; gap: .5rem; margin-top: 1.2rem; }
 .consent-actions .btn { text-align: center; }
+
+/* ---------- site absent de la liste ---------- */
+.site-lookup { margin-top: .9rem; padding-top: .8rem; border-top: 1px dashed var(--border); }
+.site-lookup .muted { margin: .35rem 0 0; }

@@ -227,9 +227,10 @@ class GraphClient:
 
     # -- SharePoint (via Graph) --------------------------------------------
     async def site_by_path(self, hostname: str, server_relative: str) -> dict | None:
-        path = server_relative.strip("/")
+        path = (server_relative or "").strip("/")
+        target = f"/sites/{hostname}" if not path else f"/sites/{hostname}:/{path}"
         try:
-            return await self.get(f"/sites/{hostname}:/{path}")
+            return await self.get(target)
         except GraphError as exc:
             if exc.status == 404:
                 return None
@@ -238,6 +239,26 @@ class GraphClient:
     async def search_sites(self, term: str) -> list[dict]:
         term = term or "*"
         return await self.get_all("/sites", params={"search": term}, limit=100)
+
+    async def list_all_sites(self, limit: int = 1000) -> list[dict]:
+        """Tous les sites du tenant, hors OneDrive personnels et sites techniques.
+
+        `/sites?search=*` repose sur l'index de recherche et, avec un jeton
+        applicatif, ne renvoie guere que quelques sites systeme : les sites
+        d'equipe lies a un groupe en sont absents. `/sites/getAllSites`
+        enumere le tenant sans passer par la recherche. On ne retombe sur la
+        recherche que si cette route est refusee.
+        """
+        try:
+            sites = await self.get_all(
+                "/sites/getAllSites",
+                params={"$select": "id,name,displayName,webUrl"},
+                limit=limit,
+            )
+        except GraphError as exc:
+            log.warning("getAllSites indisponible (%s) : repli sur la recherche.", exc)
+            sites = await self.search_sites("*")
+        return [s for s in sites if not _is_technical_site(s)]
 
     async def site_drives(self, site_id: str) -> list[dict]:
         return await self.get_all(f"/sites/{site_id}/drives")
@@ -372,6 +393,26 @@ class GraphClient:
             f"/groups/{group_id}/owners/$ref",
             json={"@odata.id": f"{GRAPH_V1}/directoryObjects/{user_id}"},
         )
+
+
+# Sites d'infrastructure SharePoint, sans interet comme cible de provisionnement.
+_TECHNICAL_PATHS = (
+    "/sites/appcatalog",
+    "/sites/contenttypehub",
+    "/sites/compliancepolicycenter",
+    "/search",
+    "/portals/",
+)
+
+
+def _is_technical_site(site: dict) -> bool:
+    """OneDrive personnel ou site d'infrastructure : a ecarter de la liste."""
+    url = (site.get("webUrl") or "").lower()
+    host, _, path = url.partition("://")[2].partition("/")
+    if host.endswith("-my.sharepoint.com"):
+        return True
+    path = "/" + path
+    return any(path.startswith(prefix) for prefix in _TECHNICAL_PATHS)
 
 
 def _retry_after(resp: httpx.Response, attempt: int) -> float:

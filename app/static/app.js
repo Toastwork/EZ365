@@ -297,6 +297,42 @@ function syncPlannedFolders() {
   applyFolders();
 }
 
+// Retrouve un site par son adresse, sans attendre l'index de recherche, et
+// l'ajoute a la liste deroulante comme s'il y avait toujours figure.
+async function resolveSiteUrl() {
+  const form = document.querySelector("form.provision");
+  const field = document.getElementById("site-url");
+  const status = document.getElementById("site-url-status");
+  const url = (field.value || "").trim();
+  if (!url) { return; }
+
+  status.textContent = "Recherche du site…";
+  try {
+    const resp = await fetch(
+      "/api/tenants/" + encodeURIComponent(form.dataset.tenant)
+      + "/resolve-site?url=" + encodeURIComponent(url),
+      { headers: { Accept: "application/json" } }
+    );
+    const data = await resp.json();
+    if (!resp.ok) {
+      status.textContent = data.error || "Site introuvable.";
+      return;
+    }
+    const select = document.getElementById("existing_site_id");
+    let option = Array.from(select.options).find(function (o) { return o.value === data.id; });
+    if (!option) {
+      option = new Option((data.displayName || "Site") + " — " + (data.webUrl || ""), data.id);
+      select.appendChild(option);
+    }
+    select.value = data.id;
+    field.value = "";
+    status.textContent = "Site retrouve et selectionne : " + (data.displayName || data.webUrl) + ".";
+    loadFolders(data.id);
+  } catch (err) {
+    status.textContent = "Recherche impossible.";
+  }
+}
+
 async function loadFolders(siteId) {
   const form = document.querySelector("form.provision");
   const status = document.getElementById("folder-status");

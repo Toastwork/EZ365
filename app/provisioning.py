@@ -155,6 +155,7 @@ async def ensure_site(ctx: JobContext, graph: GraphClient, spec: dict) -> dict |
         ctx.info("sharepoint", f"Groupe Microsoft 365 cree ({group['id']}), attente du site…")
         site = await sharepoint.wait_for_group_site(graph, group["id"])
         ctx.success("sharepoint", f"Site d'equipe pret : {site.get('webUrl')}")
+        db.remember_site(ctx.tenant_id, {**site, "displayName": display_name})
         return {"id": site["id"], "webUrl": site.get("webUrl"), "groupId": group["id"]}
 
     if mode == "communication":
@@ -170,6 +171,7 @@ async def ensure_site(ctx: JobContext, graph: GraphClient, spec: dict) -> dict |
         )
         site = await sharepoint.wait_for_site_by_path(graph, hostname, f"sites/{path}")
         ctx.success("sharepoint", f"Site de communication pret : {site.get('webUrl')}")
+        db.remember_site(ctx.tenant_id, {**site, "displayName": display_name})
         ctx.warn(
             "sharepoint",
             "Un site de communication n'a pas de groupe : les comptes n'y sont "

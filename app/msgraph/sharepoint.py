@@ -106,6 +106,30 @@ async def wait_for_group_site(
     )
 
 
+def site_key(site_id: str) -> str:
+    """Cle stable d'un site, quelle que soit la forme de son identifiant."""
+    return _site_collection_id(site_id)
+
+
+def parse_site_url(url: str) -> tuple[str, str] | None:
+    """« https://x.sharepoint.com/sites/Nom/... » -> (hote, « sites/Nom »).
+
+    Seuls le site racine et les sites sous /sites/ ou /teams/ sont reconnus ;
+    le reste de l'adresse (bibliotheque, page, parametres) est ignore.
+    """
+    match = re.match(r"^\s*https?://([^/\s]+)(/[^?#\s]*)?", url or "", re.IGNORECASE)
+    if not match:
+        return None
+    host = match.group(1).lower()
+    if not re.fullmatch(r"[a-z0-9-]+\.sharepoint\.com", host):
+        return None
+    path = match.group(2) or ""
+    site = re.match(r"^/(sites|teams)/([^/]+)", path, re.IGNORECASE)
+    if site:
+        return host, f"{site.group(1).lower()}/{unquote(site.group(2))}"
+    return host, ""
+
+
 def _site_collection_id(site_id: str) -> str:
     """Identifiant de collection d'un id Graph « hote,collection,web »."""
     parts = (site_id or "").split(",")

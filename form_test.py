@@ -195,6 +195,69 @@ with TestClient(app) as client3:
     check("type de traitement distinct",
           jobs.get_job(site_job)["kind"] == "creation du site", jobs.get_job(site_job)["kind"])
 
+
+# --- sites absents de l'index de recherche --------------------------------
+from app.routers.tenants import merge_sites
+import app.routers.tenants as tenants_router
+
+found = [{"id": "h,AAA,1", "displayName": "Zeta", "webUrl": "https://h/sites/zeta"}]
+remembered = [
+    {"id": "h,aaa,1", "displayName": "Zeta (memorise)", "webUrl": "https://h/sites/zeta"},
+    {"id": "h,BBB,2", "displayName": "alpha", "webUrl": "https://h/sites/alpha"},
+]
+merged = merge_sites(found, remembered)
+check("doublon fusionne (casse ignoree)", len(merged) == 2, merged)
+check("le resultat de recherche prime", merged[1]["displayName"] == "Zeta", merged)
+check("site non indexe marque", merged[0]["pending_index"] is True, merged[0])
+check("site indexe non marque", merged[1]["pending_index"] is False, merged[1])
+check("tri alphabetique insensible a la casse",
+      [m["displayName"] for m in merged] == ["alpha", "Zeta"], [m["displayName"] for m in merged])
+
+db.remember_site("t1", {"id": "h,CCC,3", "webUrl": "https://h/sites/c", "displayName": "Ancien nom"})
+db.remember_site("t1", {"id": "h,CCC,3", "webUrl": "https://h/sites/c", "displayName": "Nouveau nom"})
+kept = [x for x in db.remembered_sites("t1") if x["id"] == "h,CCC,3"]
+check("memorisation idempotente, nom mis a jour",
+      len(kept) == 1 and kept[0]["displayName"] == "Nouveau nom", kept)
+check("memorisation ignore un site sans id", db.remember_site("t1", {}) is None)
+
+class FakeSiteGraph:
+    def __init__(self, tenant_id): pass
+    async def __aenter__(self): return self
+    async def __aexit__(self, *a): pass
+    async def site_by_path(self, host, path):
+        self.called = (host, path)
+        FakeSiteGraph.last = (host, path)
+        if path == "sites/absent":
+            return None
+        return {"id": "h,DDD,4", "displayName": "Trouve", "webUrl": f"https://{host}/{path}"}
+
+tenants_router.GraphClient = FakeSiteGraph
+with TestClient(app) as client4:
+    client4.post("/login", data={"username": "testeur", "password": "motdepasse"})
+
+    r = client4.get("/api/tenants/t1/resolve-site",
+                    params={"url": "https://acskm.sharepoint.com/sites/Docs/Shared%20Documents/x.aspx"})
+    check("adresse resolue", r.status_code == 200 and r.json()["id"] == "h,DDD,4", r.text)
+    check("chemin de site extrait de l'URL",
+          FakeSiteGraph.last == ("acskm.sharepoint.com", "sites/Docs"), FakeSiteGraph.last)
+    check("site resolu memorise",
+          any(x["id"] == "h,DDD,4" and x["origin"] == "manuel" for x in db.remembered_sites("t1")))
+
+    r = client4.get("/api/tenants/t1/resolve-site", params={"url": "https://evil.example.com/sites/x"})
+    check("domaine non SharePoint refuse", r.status_code == 400, r.status_code)
+
+    r = client4.get("/api/tenants/t1/resolve-site",
+                    params={"url": "https://acskm.sharepoint.com/sites/absent"})
+    check("site inexistant -> 404", r.status_code == 404, r.status_code)
+
+    # La fiche tenant appelle bien d'autres methodes Graph : on remet le vrai
+    # client, dont l'echec (faux identifiants) est gere par la page.
+    from app.msgraph.client import GraphClient as RealGraphClient
+    tenants_router.GraphClient = RealGraphClient
+    page = client4.get("/tenants/t1").text
+    check("site memorise propose dans la liste",
+          'value="h,DDD,4"' in page and "ajoute via EZ365" in page)
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)
