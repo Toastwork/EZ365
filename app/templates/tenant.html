@@ -303,6 +303,25 @@
   </details>
 
 
+  <div class="actions run-options">
+    <div>
+      <label for="onedrive_wait">Attente maximale du OneDrive</label>
+      <select id="onedrive_wait" name="onedrive_wait">
+        <option value="0">Ne pas attendre</option>
+        <option value="60">1 minute</option>
+        <option value="120" selected>2 minutes</option>
+        <option value="300">5 minutes</option>
+        <option value="600">10 minutes</option>
+      </select>
+    </div>
+    <p class="muted small">
+      Passe ce delai, le traitement continue sans ce OneDrive : il finira de se
+      creer seul, et un nouveau passage en « utilisateur existant » posera les
+      raccourcis manquants. Chaque compte, raccourci ou depot au coffre est en
+      outre limite a quelques dizaines de secondes.
+    </p>
+  </div>
+
   <div class="actions">
     <button class="btn btn-primary btn-lg" type="submit">Lancer le provisionnement</button>
   </div>

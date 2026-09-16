@@ -288,6 +288,41 @@ async def add_shortcut(
     )
 
 
+async def enqueue_personal_sites(graph: GraphClient, emails: list[str]) -> tuple[bool, str]:
+    """Demande a SharePoint de creer les OneDrive (equivalent de Request-SPOPersonalSite).
+
+    Avec un jeton applicatif, lire /users/{id}/drive ne declenche pas toujours
+    la creation d'un OneDrive neuf : c'est souvent la premiere connexion de
+    l'utilisateur qui le fait. Cette route d'administration place la demande
+    dans la file de SharePoint. Elle exige la permission applicative
+    Sites.FullControl.All sur l'API SharePoint ; en cas de refus, l'appelant
+    retombe sur l'amorce Graph.
+    """
+    if not emails:
+        return True, ""
+    hostname = await graph.sharepoint_hostname()
+    admin_host = hostname.replace(".sharepoint.com", "-admin.sharepoint.com", 1)
+    token = await oauth.get_app_token(graph.tenant_id, scope=f"https://{admin_host}/.default")
+    url = (
+        f"https://{admin_host}/_api/SP.UserProfiles.ProfileLoader.GetProfileLoader"
+        "/CreatePersonalSiteEnqueueBulk"
+    )
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json;odata=nometadata",
+        "Content-Type": "application/json;odata=nometadata",
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        # La route accepte 200 adresses par appel.
+        for start in range(0, len(emails), 200):
+            resp = await client.post(
+                url, json={"emailIDs": emails[start:start + 200]}, headers=headers
+            )
+            if resp.status_code >= 400:
+                return False, f"HTTP {resp.status_code} {resp.text[:160]}"
+    return True, ""
+
+
 async def existing_shortcut_names(graph: GraphClient, user_drive_id: str) -> set[str]:
     try:
         items = await graph.get_all(f"/drives/{user_drive_id}/items/root/children", limit=500)

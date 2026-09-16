@@ -466,6 +466,195 @@ async def enum_tests():
 
 asyncio.run(enum_tests())
 
+# --- delais : on passe a la suite au lieu de bloquer ---------------------
+async def timeout_tests():
+    import types, time as _time
+
+    real_settings = provisioning.get_settings
+    fast = types.SimpleNamespace(step_timeout=0.3, shortcut_timeout=0.3, vault_timeout=0.3)
+    provisioning.get_settings = lambda: fast
+    try:
+        # garde-fou de base
+        check("bounded rend la valeur",
+              await provisioning.bounded(asyncio.sleep(0, "ok"), 1, "x") == "ok")
+        try:
+            await provisioning.bounded(asyncio.sleep(5), 0.1, "Etape lente")
+            check("bounded interrompt", False)
+        except provisioning.StepTimeout as exc:
+            check("bounded interrompt", "Etape lente" in str(exc), str(exc))
+
+        # -- un compte lent n'empeche pas de traiter le suivant ---------------
+        class Slow:
+            def __init__(self, slow_upn, created_before_hang=False, lost_response=False):
+                self.slow_upn = slow_upn
+                self.cbh = created_before_hang
+                self.lost = lost_response
+                self.created = set()
+
+            async def find_user(self, upn):
+                if upn in self.created:
+                    return {"id": "U-" + upn, "displayName": upn}
+                return None
+
+            async def create_user(self, payload):
+                upn = payload["userPrincipalName"]
+                if upn == self.slow_upn and self.lost:
+                    self.created.add(upn)       # cree cote Microsoft...
+                    await asyncio.sleep(5)      # ...mais la reponse se perd
+                self.created.add(upn)
+                return {"id": "U-" + upn}
+
+            async def assign_license(self, uid, skus):
+                if uid == "U-" + self.slow_upn and self.cbh:
+                    await asyncio.sleep(5)
+
+            async def update_user(self, uid, payload):
+                pass
+
+            async def add_group_member(self, gid, uid):
+                pass
+
+        a = provisioning.normalize_user({"upn": "lent@c.fr", "sku_ids": ["s"]}, "c.fr", "FR")
+        b = provisioning.normalize_user({"upn": "rapide@c.fr"}, "c.fr", "FR")
+
+        t0 = _time.monotonic()
+        res = await provisioning.create_users(
+            Ctx(), Slow("lent@c.fr", created_before_hang=True), [a, b], None)
+        elapsed = _time.monotonic() - t0
+        check("compte lent interrompu rapidement", elapsed < 2, round(elapsed, 2))
+        check("compte suivant traite", res[1]["created"] is True, res[1])
+        check("compte lent cree malgre le delai",
+              res[0]["created"] is True and res[0]["password"]
+              and res[0]["password_shown"] is True, res[0])
+        check("delai signale en erreur",
+              any("apres" in e for e in res[0]["errors"]), res[0]["errors"])
+
+        # reponse perdue pendant la creation : le compte est retrouve
+        res = await provisioning.create_users(
+            Ctx(), Slow("lent@c.fr", lost_response=True), [a], None)
+        check("creation sans reponse rattrapee",
+              res[0]["created"] is True and res[0]["id"] == "U-lent@c.fr"
+              and res[0]["password_shown"] is True, res[0])
+
+        # -- OneDrive : budget d'attente respecte ------------------------------
+        saved_delay = provisioning.ONEDRIVE_DELAY
+        saved_enqueue = sharepoint.enqueue_personal_sites
+        provisioning.ONEDRIVE_DELAY = 0.05
+        try:
+            async def enqueue_ok(graph, emails):
+                return True, ""
+
+            async def enqueue_ko(graph, emails):
+                return False, "HTTP 403"
+
+            class Drives:
+                def __init__(self, ready_after=None):
+                    self.calls = 0
+                    self.ready_after = ready_after
+
+                async def user_drive(self, uid):
+                    self.calls += 1
+                    if self.ready_after is not None and self.calls > self.ready_after:
+                        return {"id": "D-" + uid}
+                    return None
+
+            sharepoint.enqueue_personal_sites = enqueue_ok
+            entries = [{"upn": "x@c.fr", "id": "X", "provision_onedrive": True,
+                        "shortcut_folders": ["Commun"], "errors": []}]
+            drives = Drives()
+            t0 = _time.monotonic()
+            await provisioning.provision_onedrives(Ctx(), drives, entries, 0)
+            # une amorce + une seule lecture, sans attente
+            check("attente 0 : une seule verification",
+                  drives.calls == 2 and _time.monotonic() - t0 < 1, drives.calls)
+            check("OneDrive en cours signale",
+                  entries[0]["onedrive"] == "en cours de creation", entries[0])
+            check("raccourcis manquants signales",
+                  any("relancer" in e for e in entries[0]["errors"]), entries[0]["errors"])
+
+            entries = [{"upn": "y@c.fr", "id": "Y", "provision_onedrive": True, "errors": []}]
+            t0 = _time.monotonic()
+            await provisioning.provision_onedrives(Ctx(), Drives(), entries, 1)
+            elapsed = _time.monotonic() - t0
+            check("budget d'attente respecte", 0.9 < elapsed < 2, round(elapsed, 2))
+            check("OneDrive seul en retard : pas d'erreur",
+                  entries[0]["errors"] == [], entries[0])
+
+            entries = [{"upn": "z@c.fr", "id": "Z", "provision_onedrive": True, "errors": []}]
+            await provisioning.provision_onedrives(Ctx(), Drives(ready_after=2), entries, 5)
+            check("OneDrive pret avant la fin du budget",
+                  entries[0]["onedrive"] == "pret" and entries[0]["drive_id"] == "D-Z",
+                  entries[0])
+
+            sharepoint.enqueue_personal_sites = enqueue_ko
+            ctx = Ctx()
+            entries = [{"upn": "w@c.fr", "id": "W", "provision_onedrive": True, "errors": []}]
+            await provisioning.provision_onedrives(ctx, Drives(), entries, 0)
+            check("refus SharePoint signale, repli Graph",
+                  any("refusee" in m for lvl, m in ctx.msgs)
+                  and entries[0]["onedrive"] == "non provisionne", ctx.msgs)
+        finally:
+            provisioning.ONEDRIVE_DELAY = saved_delay
+            sharepoint.enqueue_personal_sites = saved_enqueue
+
+        # -- raccourci lent : on passe au suivant ------------------------------
+        async def resolve(ctx, graph, site, folder):
+            return {"driveId": "S", "itemId": "i-" + folder, "name": "Documents"}
+
+        async def no_existing(graph, drive_id):
+            return set()
+
+        made = []
+
+        async def add(graph, user_drive, src, item, name):
+            if name == "Lent":
+                await asyncio.sleep(5)
+            made.append(name)
+
+        provisioning.resolve_shortcut_target = resolve
+        sharepoint.existing_shortcut_names = no_existing
+        sharepoint.add_shortcut = add
+        entries = [{"upn": "r@c.fr", "drive_id": "D", "errors": [],
+                    "shortcut_folders": ["Lent", "Rapide"]}]
+        t0 = _time.monotonic()
+        await provisioning.add_shortcuts(Ctx(), None, entries, {"id": "S"}, "Site")
+        check("raccourci lent interrompu, suivant pose",
+              made == ["Rapide"] and _time.monotonic() - t0 < 2, made)
+        check("raccourci lent signale a verifier",
+              entries[0]["shortcuts"][0]["status"] == "delai depasse",
+              entries[0]["shortcuts"])
+
+        # -- depot au coffre lent : entree suivante traitee ---------------------
+        from app.vault import bitwarden as bw
+
+        async def ready():
+            return (True, "ok")
+
+        deposited = []
+
+        async def create(**kw):
+            if kw["name"] == "LENT":
+                await asyncio.sleep(5)
+            deposited.append(kw["name"])
+            return {}
+
+        bw.is_ready, bw.create_login = ready, create
+        entries = [
+            {"upn": "l@c.fr", "created": True, "password": "P", "vault_enabled": True,
+             "vault_name": "LENT", "license_names": [], "errors": []},
+            {"upn": "v@c.fr", "created": True, "password": "Q", "vault_enabled": True,
+             "vault_name": "VITE", "license_names": [], "errors": []},
+        ]
+        await provisioning.store_in_vault(Ctx(), entries, {"id": "t"}, {})
+        check("depot lent interrompu, suivant depose", deposited == ["VITE"], deposited)
+        check("depot lent : mot de passe conserve a l'affichage",
+              entries[0]["vault"] == "delai depasse"
+              and entries[0]["password_shown"] is True, entries[0])
+    finally:
+        provisioning.get_settings = real_settings
+
+asyncio.run(timeout_tests())
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)

@@ -53,6 +53,14 @@ class Settings:
 
     # --- Divers -----------------------------------------------------------
     build_ref: str = field(default_factory=lambda: _str("EZ365_BUILD", "dev"))
+
+    # --- Delais (secondes) : au-dela, on passe au compte ou a l'etape suivante
+    step_timeout: int = field(default_factory=lambda: int(_str("EZ365_STEP_TIMEOUT", "90")))
+    shortcut_timeout: int = field(default_factory=lambda: int(_str("EZ365_SHORTCUT_TIMEOUT", "45")))
+    vault_timeout: int = field(default_factory=lambda: int(_str("EZ365_VAULT_TIMEOUT", "30")))
+    graph_request_timeout: int = field(
+        default_factory=lambda: int(_str("EZ365_GRAPH_TIMEOUT", "30"))
+    )
     host: str = field(default_factory=lambda: _str("HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: int(_str("PORT", "8000")))
 

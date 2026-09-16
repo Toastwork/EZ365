@@ -258,6 +258,23 @@ with TestClient(app) as client4:
     check("site memorise propose dans la liste",
           'value="h,DDD,4"' in page and "ajoute via EZ365" in page)
 
+
+# --- reglage de l'attente OneDrive ------------------------------------------
+with TestClient(app) as client5:
+    client5.post("/login", data={"username": "testeur", "password": "motdepasse"})
+    for sent, expected in [("300", 300), ("0", 0), ("99999", 600), ("-5", 0), ("abc", 120), (None, 120)]:
+        data = {"site_mode": "none", "first_name": ["Test"], "last_name": ["Delai"],
+                "alias": [""], "user_domain": ["c.fr"]}
+        if sent is not None:
+            data["onedrive_wait"] = sent
+        r = client5.post("/tenants/t1/provision", data=data, follow_redirects=False)
+        job = r.headers["location"].rsplit("/", 1)[1]
+        got = jobs.job_payload(job).get("onedrive_wait")
+        check(f"attente OneDrive {sent!r} -> {expected}", got == expected, got)
+    page = client5.get("/tenants/t1").text
+    check("selecteur d'attente dans le formulaire",
+          'name="onedrive_wait"' in page and 'value="120" selected' in page)
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)

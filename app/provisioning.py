@@ -17,16 +17,40 @@ import asyncio
 import logging
 from typing import Any
 
+import httpx
+
 from . import db, passwords
 from .jobs import JobContext
 from .msgraph import sharepoint
 from .msgraph.client import GraphClient, GraphError
+from .msgraph.oauth import ConsentError
 from .vault import bitwarden
 
 log = logging.getLogger(__name__)
 
-ONEDRIVE_ATTEMPTS = 20
+from .config import get_settings
+
+# Attente du OneDrive : intervalle entre deux verifications, duree par defaut
+# et duree maximale admise depuis le formulaire.
 ONEDRIVE_DELAY = 15.0
+ONEDRIVE_WAIT_DEFAULT = 120
+ONEDRIVE_WAIT_MAX = 600
+# Une verification de OneDrive ne doit pas consommer tout le budget d'attente.
+ONEDRIVE_CHECK_TIMEOUT = 20
+
+
+class StepTimeout(Exception):
+    """Une etape a depasse son delai : on passe a la suite."""
+
+
+async def bounded(coro, seconds: float, what: str):
+    """Execute `coro` en l'interrompant au-dela de `seconds`."""
+    try:
+        return await asyncio.wait_for(coro, timeout=seconds)
+    except asyncio.TimeoutError as exc:
+        raise StepTimeout(
+            f"{what} : pas de reponse de Microsoft apres {int(seconds)} s"
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -276,91 +300,13 @@ async def create_users(
             "errors": [],
         }
         try:
-            existing = await graph.find_user(spec["upn"])
-            if existing:
-                entry["id"] = existing["id"]
-                entry["existing"] = True
-                entry["password"] = ""
-                entry["display_name"] = existing.get("displayName") or entry["display_name"]
-                if spec["existing_only"]:
-                    ctx.info("utilisateurs", f"Compte existant retenu : {spec['upn']}")
-                else:
-                    ctx.warn(
-                        "utilisateurs",
-                        f"{spec['upn']} existe deja : compte reutilise, mot de passe inchange.",
-                    )
-                if not existing.get("usageLocation"):
-                    await graph.update_user(
-                        existing["id"], {"usageLocation": spec["usage_location"]}
-                    )
-            elif spec["existing_only"]:
-                raise ValueError(
-                    "compte introuvable sur le tenant : il figurait pourtant dans la "
-                    "liste des utilisateurs existants (a-t-il ete supprime depuis ?)"
-                )
-            else:
-                payload = {
-                    "accountEnabled": True,
-                    "displayName": spec["display_name"],
-                    "mailNickname": sharepoint.mail_nickname(spec["upn"].split("@")[0]),
-                    "userPrincipalName": spec["upn"],
-                    "usageLocation": spec["usage_location"],
-                    "passwordProfile": {
-                        "forceChangePasswordNextSignIn": spec["force_change"],
-                        "password": entry["password"],
-                    },
-                }
-                if spec["first_name"]:
-                    payload["givenName"] = spec["first_name"]
-                if spec["last_name"]:
-                    payload["surname"] = spec["last_name"]
-                if spec["job_title"]:
-                    payload["jobTitle"] = spec["job_title"]
-                if spec["department"]:
-                    payload["department"] = spec["department"]
-
-                created = await graph.create_user(payload)
-                entry["id"] = created["id"]
-                entry["created"] = True
-                ctx.success("utilisateurs", f"Compte cree : {spec['upn']}")
-
-            # -- licences --------------------------------------------------
-            sku_ids = spec.get("sku_ids") or []
-            if sku_ids:
-                try:
-                    await graph.assign_license(entry["id"], sku_ids)
-                    entry["licenses"] = sku_ids
-                    ctx.success(
-                        "licences",
-                        f"{', '.join(spec.get('sku_names') or sku_ids)} attribuee(s) "
-                        f"a {spec['upn']}",
-                    )
-                except GraphError as exc:
-                    entry["errors"].append(f"licence : {exc.friendly}")
-                    ctx.error("licences", f"Licence refusee pour {spec['upn']} : {exc.friendly}")
-
-            # -- appartenance au groupe du site d'equipe -------------------
-            if site and site.get("groupId"):
-                try:
-                    await graph.add_group_member(site["groupId"], entry["id"])
-                    entry["site_access"] = "membre ajoute"
-                    ctx.success("sharepoint", f"{spec['upn']} ajoute aux membres du site.")
-                except GraphError as exc:
-                    # Seul ce 400-la signifie « deja membre » ; les autres sont
-                    # de vrais refus et doivent se voir.
-                    if exc.status == 400 and "already exist" in exc.message.lower():
-                        entry["site_access"] = "deja membre"
-                    else:
-                        entry["site_access"] = "echec"
-                        entry["errors"].append(f"acces au site : {exc.friendly}")
-                        ctx.error(
-                            "sharepoint",
-                            f"{spec['upn']} n'a pas pu etre ajoute aux membres du "
-                            f"site : {exc.friendly}",
-                        )
-            elif site:
-                entry["site_access"] = "non gere"
-
+            await bounded(
+                _process_user(ctx, graph, spec, entry, site),
+                get_settings().step_timeout,
+                f"Traitement de {spec['upn']}",
+            )
+        except StepTimeout as exc:
+            await _after_user_timeout(ctx, graph, spec, entry, exc)
         except GraphError as exc:
             entry["errors"].append(exc.friendly)
             ctx.error("utilisateurs", f"Echec sur {spec['upn']} : {exc.friendly}")
@@ -372,10 +318,146 @@ async def create_users(
     return results
 
 
+async def _after_user_timeout(
+    ctx: JobContext, graph: GraphClient, spec: dict, entry: dict, exc: StepTimeout
+) -> None:
+    """Delai depasse sur un compte : constater ce qui a ete fait, puis continuer.
+
+    Le plus delicat : la creation a pu aboutir cote Microsoft sans que la
+    reponse nous parvienne. Le compte existe alors avec un mot de passe que
+    nous sommes seuls a connaitre — on le verifie pour ne pas le perdre.
+    """
+    entry["errors"].append(str(exc))
+    if not entry.get("id") and not spec["existing_only"]:
+        try:
+            found = await bounded(graph.find_user(spec["upn"]), 15, "Verification")
+        except (StepTimeout, GraphError):
+            found = None
+        if found:
+            entry["id"] = found["id"]
+            entry["created"] = True
+    if entry.get("created"):
+        # Le mot de passe reste affiche tant que le coffre ne l'a pas recu.
+        entry["password_shown"] = True
+        ctx.warn(
+            "utilisateurs",
+            f"{exc} — le compte {spec['upn']} a bien ete cree, mais les etapes "
+            "suivantes (licence, acces au site) sont a verifier. Compte suivant.",
+        )
+    else:
+        ctx.error("utilisateurs", f"{exc} — on passe au compte suivant.")
+
+
+async def _process_user(
+    ctx: JobContext, graph: GraphClient, spec: dict, entry: dict, site: dict | None
+) -> None:
+    """Creation ou reprise d'un compte, licences, acces au site.
+
+    `entry` est complete au fil de l'eau : si le delai est depasse en cours de
+    route, l'appelant sait jusqu'ou le traitement est alle.
+    """
+    existing = await graph.find_user(spec["upn"])
+    if existing:
+        entry["id"] = existing["id"]
+        entry["existing"] = True
+        entry["password"] = ""
+        entry["display_name"] = existing.get("displayName") or entry["display_name"]
+        if spec["existing_only"]:
+            ctx.info("utilisateurs", f"Compte existant retenu : {spec['upn']}")
+        else:
+            ctx.warn(
+                "utilisateurs",
+                f"{spec['upn']} existe deja : compte reutilise, mot de passe inchange.",
+            )
+        if not existing.get("usageLocation"):
+            await graph.update_user(
+                existing["id"], {"usageLocation": spec["usage_location"]}
+            )
+    elif spec["existing_only"]:
+        raise ValueError(
+            "compte introuvable sur le tenant : il figurait pourtant dans la "
+            "liste des utilisateurs existants (a-t-il ete supprime depuis ?)"
+        )
+    else:
+        payload = {
+            "accountEnabled": True,
+            "displayName": spec["display_name"],
+            "mailNickname": sharepoint.mail_nickname(spec["upn"].split("@")[0]),
+            "userPrincipalName": spec["upn"],
+            "usageLocation": spec["usage_location"],
+            "passwordProfile": {
+                "forceChangePasswordNextSignIn": spec["force_change"],
+                "password": entry["password"],
+            },
+        }
+        if spec["first_name"]:
+            payload["givenName"] = spec["first_name"]
+        if spec["last_name"]:
+            payload["surname"] = spec["last_name"]
+        if spec["job_title"]:
+            payload["jobTitle"] = spec["job_title"]
+        if spec["department"]:
+            payload["department"] = spec["department"]
+
+        created = await graph.create_user(payload)
+        entry["id"] = created["id"]
+        entry["created"] = True
+        ctx.success("utilisateurs", f"Compte cree : {spec['upn']}")
+
+    # -- licences --------------------------------------------------
+    sku_ids = spec.get("sku_ids") or []
+    if sku_ids:
+        try:
+            await graph.assign_license(entry["id"], sku_ids)
+            entry["licenses"] = sku_ids
+            ctx.success(
+                "licences",
+                f"{', '.join(spec.get('sku_names') or sku_ids)} attribuee(s) "
+                f"a {spec['upn']}",
+            )
+        except GraphError as exc:
+            entry["errors"].append(f"licence : {exc.friendly}")
+            ctx.error("licences", f"Licence refusee pour {spec['upn']} : {exc.friendly}")
+
+    # -- appartenance au groupe du site d'equipe -------------------
+    if site and site.get("groupId"):
+        try:
+            await graph.add_group_member(site["groupId"], entry["id"])
+            entry["site_access"] = "membre ajoute"
+            ctx.success("sharepoint", f"{spec['upn']} ajoute aux membres du site.")
+        except GraphError as exc:
+            # Seul ce 400-la signifie « deja membre » ; les autres sont
+            # de vrais refus et doivent se voir.
+            if exc.status == 400 and "already exist" in exc.message.lower():
+                entry["site_access"] = "deja membre"
+            else:
+                entry["site_access"] = "echec"
+                entry["errors"].append(f"acces au site : {exc.friendly}")
+                ctx.error(
+                    "sharepoint",
+                    f"{spec['upn']} n'a pas pu etre ajoute aux membres du "
+                    f"site : {exc.friendly}",
+                )
+    elif site:
+        entry["site_access"] = "non gere"
+
+
 # ---------------------------------------------------------------------------
 # Etape 3 : OneDrive
 # ---------------------------------------------------------------------------
-async def provision_onedrives(ctx: JobContext, graph: GraphClient, results: list[dict]) -> None:
+async def provision_onedrives(
+    ctx: JobContext,
+    graph: GraphClient,
+    results: list[dict],
+    wait_seconds: int = ONEDRIVE_WAIT_DEFAULT,
+) -> None:
+    """Demande les OneDrive, puis les attend au plus `wait_seconds`.
+
+    Un OneDrive se cree de facon asynchrone, parfois en plusieurs minutes.
+    Au-dela du delai choisi, on passe a la suite : le OneDrive finira de se
+    creer seul, et un nouveau passage en « utilisateur existant » posera les
+    raccourcis manquants.
+    """
     # Seuls les comptes pour lesquels l'operateur l'a demande — ou qui
     # attendent un raccourci — passent par cette etape, la plus lente.
     targets = [r for r in results if r.get("id") and r.get("provision_onedrive")]
@@ -383,30 +465,63 @@ async def provision_onedrives(ctx: JobContext, graph: GraphClient, results: list
         ctx.info("onedrive", "Aucun OneDrive a provisionner.")
         return
 
+    wait_seconds = max(0, min(int(wait_seconds), ONEDRIVE_WAIT_MAX))
     ctx.info(
         "onedrive",
-        f"Declenchement du provisionnement OneDrive pour {len(targets)} compte(s). "
-        "Microsoft peut mettre plusieurs minutes.",
+        f"Demande de creation du OneDrive pour {len(targets)} compte(s) "
+        f"(attente maximale : {wait_seconds} s).",
     )
+
+    # 1. Demande explicite a SharePoint : la seule voie fiable en app-only.
+    try:
+        queued, detail = await bounded(
+            sharepoint.enqueue_personal_sites(graph, [e["upn"] for e in targets]),
+            60,
+            "Demande de creation des OneDrive",
+        )
+    except (StepTimeout, GraphError, ConsentError, httpx.HTTPError) as exc:
+        queued, detail = False, str(exc)
+    if queued:
+        ctx.info("onedrive", "Creation des OneDrive demandee a SharePoint.")
+    else:
+        ctx.warn(
+            "onedrive",
+            f"Demande a SharePoint refusee ({detail}). Repli sur l'amorce Graph, "
+            "moins fiable : la permission Sites.FullControl.All de l'API "
+            "SharePoint permet de s'en passer.",
+        )
+
+    # 2. Amorce Graph, utile a elle seule sur certains tenants.
     for entry in targets:
         try:
-            await graph.user_drive(entry["id"])
-        except GraphError as exc:
+            await bounded(graph.user_drive(entry["id"]), ONEDRIVE_CHECK_TIMEOUT, "Amorce")
+        except (GraphError, StepTimeout) as exc:
             log.debug("Amorce OneDrive %s : %s", entry["upn"], exc)
 
+    # 3. Attente bornee. Une premiere verification est toujours faite : un
+    #    compte existant a generalement deja son OneDrive.
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    deadline = started + wait_seconds
+    next_report = started + 60
     pending = {e["upn"]: e for e in targets}
-    for attempt in range(0, ONEDRIVE_ATTEMPTS + 1):
-        if not pending:
-            break
-        # La 1re passe est immediate : un compte en place a deja son OneDrive,
-        # inutile de lui faire attendre un cycle complet.
-        if attempt:
-            await asyncio.sleep(ONEDRIVE_DELAY)
+    first = True
+
+    while pending:
+        if not first:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(ONEDRIVE_DELAY, remaining))
+        first = False
+
         for upn in list(pending):
             entry = pending[upn]
             try:
-                drive = await graph.user_drive(entry["id"])
-            except GraphError as exc:
+                drive = await bounded(
+                    graph.user_drive(entry["id"]), ONEDRIVE_CHECK_TIMEOUT, "Lecture"
+                )
+            except (GraphError, StepTimeout) as exc:
                 log.debug("Attente OneDrive %s : %s", upn, exc)
                 continue
             if drive and drive.get("id"):
@@ -414,20 +529,33 @@ async def provision_onedrives(ctx: JobContext, graph: GraphClient, results: list
                 entry["onedrive"] = "pret"
                 ctx.success("onedrive", f"OneDrive pret pour {upn}")
                 pending.pop(upn, None)
-        if pending and attempt % 4 == 0:
+
+        now = loop.time()
+        if pending and now >= next_report and now < deadline:
             ctx.info(
                 "onedrive",
                 f"Toujours en attente pour {len(pending)} compte(s) "
-                f"({int(attempt * ONEDRIVE_DELAY)} s ecoulees)…",
+                f"({int(now - started)} s sur {wait_seconds} s)…",
             )
+            next_report = now + 60
+        if now >= deadline:
+            break
 
     for upn, entry in pending.items():
-        entry["onedrive"] = "non provisionne"
-        entry["errors"].append("OneDrive non provisionne dans le delai imparti")
+        entry["onedrive"] = "en cours de creation" if queued else "non provisionne"
+        if entry.get("shortcut_folders"):
+            entry["errors"].append(
+                "raccourcis non poses : OneDrive pas encore pret — relancer plus "
+                "tard en « utilisateur existant »"
+            )
         ctx.warn(
             "onedrive",
-            f"OneDrive de {upn} pas encore pret. Il se creera seul (souvent a la "
-            "premiere connexion) ; le raccourci devra alors etre repasse.",
+            f"OneDrive de {upn} pas pret apres {wait_seconds} s : on passe a la "
+            "suite. " + (
+                "Sa creation est en cours cote SharePoint."
+                if queued else
+                "Il sera cree au plus tard a sa premiere connexion."
+            ),
         )
 
 
@@ -467,8 +595,17 @@ async def add_shortcuts(
             ]
             continue
 
+        limit = get_settings().shortcut_timeout
         # Lu une fois par utilisateur, puis tenu a jour au fil des ajouts.
-        existing = await sharepoint.existing_shortcut_names(graph, drive_id)
+        try:
+            existing = await bounded(
+                sharepoint.existing_shortcut_names(graph, drive_id), limit,
+                "Lecture du OneDrive",
+            )
+        except StepTimeout as exc:
+            # Sans cette liste, on risque seulement un doublon renomme.
+            ctx.warn("raccourcis", f"{exc} ({entry['upn']}) : doublons non verifies.")
+            existing = set()
         done: list[dict] = []
 
         for folder in folders:
@@ -483,19 +620,34 @@ async def add_shortcuts(
                 ctx.info("raccourcis", f"Raccourci « {label} » deja present chez {entry['upn']}")
                 continue
 
-            target = await target_for(folder)
+            try:
+                target = await bounded(target_for(folder), limit, f"Dossier « {shown} »")
+            except StepTimeout as exc:
+                done.append({"folder": shown, "status": "delai depasse"})
+                entry["errors"].append(f"raccourci : {exc}")
+                ctx.warn("raccourcis", f"{exc} — raccourci suivant.")
+                continue
             if not target:
                 done.append({"folder": shown, "status": "cible introuvable"})
                 entry["errors"].append(f"raccourci : dossier « {shown} » introuvable")
                 continue
 
             try:
-                await sharepoint.add_shortcut(
-                    graph, drive_id, target["driveId"], target["itemId"], label
+                await bounded(
+                    sharepoint.add_shortcut(
+                        graph, drive_id, target["driveId"], target["itemId"], label
+                    ),
+                    limit,
+                    f"Raccourci « {label} » pour {entry['upn']}",
                 )
                 existing.add(label.casefold())
                 done.append({"folder": shown, "status": "ajoute"})
                 ctx.success("raccourcis", f"Raccourci « {label} » ajoute chez {entry['upn']}")
+            except StepTimeout as exc:
+                # La creation a pu aboutir sans que la reponse arrive.
+                done.append({"folder": shown, "status": "delai depasse"})
+                entry["errors"].append(f"raccourci : {exc} (a verifier)")
+                ctx.warn("raccourcis", f"{exc} — raccourci suivant, a verifier.")
             except (sharepoint.SharePointError, GraphError) as exc:
                 done.append({"folder": shown, "status": "echec"})
                 entry["errors"].append(f"raccourci « {shown} » : {exc}")
@@ -527,7 +679,11 @@ async def store_in_vault(
         ctx.info("bitwarden", "Aucun identifiant a deposer dans le coffre.")
         return
 
-    ready, message = await bitwarden.is_ready()
+    limit = get_settings().vault_timeout
+    try:
+        ready, message = await bounded(bitwarden.is_ready(), limit, "Coffre")
+    except StepTimeout as exc:
+        ready, message = False, str(exc)
     if not ready:
         for entry in wanted:
             entry["vault"] = "indisponible"
@@ -560,7 +716,7 @@ async def store_in_vault(
                 f"Client : {client_name}\nTenant : {tenant['id']}\n"
                 f"Licences : {', '.join(entry.get('license_names') or []) or 'aucune'}"
             )
-            await bitwarden.create_login(
+            await bounded(bitwarden.create_login(
                 name=name,
                 username=entry["upn"],
                 password=entry["password"],
@@ -572,11 +728,21 @@ async def store_in_vault(
                     {"name": "Tenant", "value": tenant["id"], "type": 0},
                     {"name": "Cree par", "value": ctx.actor, "type": 0},
                 ],
-            )
+            ), limit, f"Depot de « {name} »")
             entry["vault"] = "enregistre"
             entry["vault_name"] = name
             entry["password_shown"] = False
             ctx.success("bitwarden", f"« {name} » depose dans le coffre.")
+        except StepTimeout as exc:
+            # L'entree a pu etre creee malgre tout : a verifier avant de la refaire.
+            entry["vault"] = "delai depasse"
+            entry["password_shown"] = True
+            entry["errors"].append(f"coffre : {exc}")
+            ctx.error(
+                "bitwarden",
+                f"{exc} — verifiez le coffre avant de recreer l'entree ; le mot de "
+                "passe reste affiche dans le recapitulatif. Entree suivante.",
+            )
         except bitwarden.VaultError as exc:
             entry["vault"] = "echec"
             entry["password_shown"] = True
@@ -630,7 +796,10 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
 
         results = await create_users(ctx, graph, user_specs, site)
 
-        await provision_onedrives(ctx, graph, results)
+        await provision_onedrives(
+            ctx, graph, results,
+            spec.get("onedrive_wait", ONEDRIVE_WAIT_DEFAULT),
+        )
 
         if site:
             default_label = site_spec.get("display_name") or "Documents"

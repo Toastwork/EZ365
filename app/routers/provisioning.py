@@ -312,9 +312,18 @@ async def start_provisioning(
         ).strip(),
     }
 
+    # Attente maximale du OneDrive, bornee : une valeur fantaisiste retombe sur
+    # le defaut plutot que de bloquer le traitement.
+    try:
+        onedrive_wait = int(form.get("onedrive_wait", provisioning.ONEDRIVE_WAIT_DEFAULT))
+    except (TypeError, ValueError):
+        onedrive_wait = provisioning.ONEDRIVE_WAIT_DEFAULT
+    onedrive_wait = max(0, min(onedrive_wait, provisioning.ONEDRIVE_WAIT_MAX))
+
     spec = {
         "site": site_spec,
         "users": users,
+        "onedrive_wait": onedrive_wait,
         "vault": vault_spec,
     }
 

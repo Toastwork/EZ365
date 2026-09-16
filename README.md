@@ -132,6 +132,33 @@ C'est utile quand la creation du site et l'arrivee des utilisateurs ne se font
 pas le meme jour : on prepare l'espace documentaire, puis on revient plus tard
 provisionner les comptes en choisissant « site existant ».
 
+### Delais : un compte lent ne bloque plus le traitement
+
+Chaque etape a une duree maximale ; au-dela, le traitement passe au compte ou
+a l'element suivant et le signale dans le journal.
+
+| Etape | Delai | Variable |
+|---|---|---|
+| Un compte (creation, licence, acces au site) | 90 s | `EZ365_STEP_TIMEOUT` |
+| Un raccourci | 45 s | `EZ365_SHORTCUT_TIMEOUT` |
+| Un depot au coffre | 30 s | `EZ365_VAULT_TIMEOUT` |
+| Un appel Microsoft Graph | 30 s | `EZ365_GRAPH_TIMEOUT` |
+| Attente des OneDrive | 2 min par defaut | choix dans le formulaire (0 a 10 min) |
+
+Si le delai tombe apres la creation d'un compte, celui-ci est bien retenu :
+son mot de passe reste affiche dans le recapitulatif et part au coffre. Si la
+reponse de creation se perd, EZ365 verifie l'existence du compte avant de
+conclure. Un raccourci ou un depot interrompu est marque « delai depasse » :
+il a pu aboutir malgre tout, a verifier avant de le refaire.
+
+**OneDrive.** EZ365 demande la creation des OneDrive a SharePoint
+(`CreatePersonalSiteEnqueueBulk`), la seule voie fiable avec un jeton
+applicatif ; elle exige la permission `Sites.FullControl.All` de l'API
+SharePoint. Sans elle, il retombe sur une simple lecture Graph, qui ne
+declenche pas toujours la creation. Un OneDrive pas pret a la fin de l'attente
+finit de se creer seul : un nouveau passage en « utilisateur existant » pose
+alors les raccourcis manquants.
+
 ### Liste des sites existants
 
 La liste est lue avec `/sites/getAllSites`, qui enumere tout le tenant. La

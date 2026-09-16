@@ -333,3 +333,9 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
 /* ---------- site absent de la liste ---------- */
 .site-lookup { margin-top: .9rem; padding-top: .8rem; border-top: 1px dashed var(--border); }
 .site-lookup .muted { margin: .35rem 0 0; }
+
+/* ---------- options de lancement ---------- */
+.run-options { display: grid; grid-template-columns: minmax(200px, 260px) 1fr;
+               gap: .9rem; align-items: end; }
+.run-options .muted { margin: 0; }
+@media (max-width: 760px) { .run-options { grid-template-columns: 1fr; } }

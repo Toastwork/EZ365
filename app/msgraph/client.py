@@ -41,9 +41,13 @@ class GraphError(Exception):
 class GraphClient:
     """Un client par tenant, a utiliser en context manager async."""
 
-    def __init__(self, tenant_id: str, timeout: float = 60.0):
+    def __init__(self, tenant_id: str, timeout: float | None = None):
+        from ..config import get_settings
+
         self.tenant_id = tenant_id
-        self._client = httpx.AsyncClient(timeout=timeout)
+        self._client = httpx.AsyncClient(
+            timeout=timeout or get_settings().graph_request_timeout
+        )
 
     async def __aenter__(self) -> "GraphClient":
         return self
