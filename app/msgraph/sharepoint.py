@@ -46,29 +46,6 @@ def slugify(value: str, max_length: int = 60, fallback: str = "") -> str:
     return (slug[:max_length].strip("-") or fallback).lower()
 
 
-def explain_sharepoint_refusal(resp: httpx.Response) -> str:
-    """Traduit un refus de l'API REST SharePoint en action a mener."""
-    text = resp.text[:300]
-    diagnostics = resp.headers.get("x-ms-diagnostics", "")
-    if resp.status_code == 401 and "unsupported app only token" in (text + diagnostics).lower():
-        return (
-            "SharePoint refuse un jeton issu d'un secret client : il faut le "
-            "certificat d'EZ365 (page « Certificat SharePoint »)."
-        )
-    if resp.status_code == 401:
-        return (
-            "SharePoint refuse le jeton (401) : certificat pas encore depose sur "
-            "l'application Azure, ou consentement du tenant a renouveler."
-        )
-    if resp.status_code == 403:
-        return (
-            "SharePoint refuse l'operation (403) : la permission applicative "
-            "Sites.FullControl.All de l'API SharePoint manque, ou n'a pas ete "
-            "consentie sur ce tenant."
-        )
-    return f"HTTP {resp.status_code} {text}"
-
-
 def mail_nickname(value: str) -> str:
     slug = slugify(value, max_length=54)
     return slug.replace("-", "") or "equipe"
@@ -233,11 +210,14 @@ async def create_communication_site(
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(url, json=body, headers=headers)
 
-    if resp.status_code >= 400:
+    if resp.status_code == 403:
         raise SharePointError(
-            "Creation du site de communication impossible : "
-            + explain_sharepoint_refusal(resp)
+            "SharePoint refuse la creation (403). La permission applicative "
+            "Sites.FullControl.All (API SharePoint) est requise pour les sites "
+            "de communication ; sinon utilisez le type « site d'equipe »."
         )
+    if resp.status_code >= 400:
+        raise SharePointError(f"SPSiteManager a repondu {resp.status_code} : {resp.text[:300]}")
 
     payload = resp.json()
     result = payload.get("d", {}).get("Create", payload)
@@ -308,40 +288,63 @@ async def add_shortcut(
     )
 
 
-async def enqueue_personal_sites(graph: GraphClient, emails: list[str]) -> tuple[bool, str]:
-    """Demande a SharePoint de creer les OneDrive (equivalent de Request-SPOPersonalSite).
+ENQUEUE_PATH = (
+    "/_api/SP.UserProfiles.ProfileLoader.GetProfileLoader/CreatePersonalSiteEnqueueBulk"
+)
 
-    Avec un jeton applicatif, lire /users/{id}/drive ne declenche pas toujours
-    la creation d'un OneDrive neuf : c'est souvent la premiere connexion de
-    l'utilisateur qui le fait. Cette route d'administration place la demande
-    dans la file de SharePoint. Elle exige un jeton obtenu par certificat
-    (SharePoint refuse ceux issus d'un secret) et la permission applicative
-    Sites.FullControl.All de l'API SharePoint ; en cas de refus, l'appelant
-    retombe sur l'amorce Graph.
-    """
-    if not emails:
-        return True, ""
+
+def admin_host_for(hostname: str) -> str:
+    """contoso.sharepoint.com -> contoso-admin.sharepoint.com"""
+    return hostname.replace(".sharepoint.com", "-admin.sharepoint.com", 1)
+
+
+def describe_response(resp: httpx.Response) -> dict:
+    """Ce qu'il faut pour comprendre un refus SharePoint, sans le jeton."""
+    return {
+        "status": resp.status_code,
+        "x-ms-diagnostics": resp.headers.get("x-ms-diagnostics", ""),
+        "request-id": resp.headers.get("request-id")
+        or resp.headers.get("sprequestguid", ""),
+        "www-authenticate": resp.headers.get("www-authenticate", ""),
+        "body": resp.text[:800],
+    }
+
+
+async def post_enqueue(graph: GraphClient, emails: list[str]) -> tuple[str, httpx.Response]:
+    """Un appel CreatePersonalSiteEnqueueBulk ; renvoie (url, reponse brute)."""
     hostname = await graph.sharepoint_hostname()
-    admin_host = hostname.replace(".sharepoint.com", "-admin.sharepoint.com", 1)
+    admin_host = admin_host_for(hostname)
     token = await oauth.get_app_token(graph.tenant_id, scope=f"https://{admin_host}/.default")
-    url = (
-        f"https://{admin_host}/_api/SP.UserProfiles.ProfileLoader.GetProfileLoader"
-        "/CreatePersonalSiteEnqueueBulk"
-    )
+    url = f"https://{admin_host}{ENQUEUE_PATH}"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json;odata=nometadata",
         "Content-Type": "application/json;odata=nometadata",
     }
     async with httpx.AsyncClient(timeout=30) as client:
-        # La route accepte 200 adresses par appel.
-        for start in range(0, len(emails), 200):
-            resp = await client.post(
-                url, json={"emailIDs": emails[start:start + 200]}, headers=headers
-            )
-            if resp.status_code >= 400:
-                return False, explain_sharepoint_refusal(resp)
-    return True, ""
+        resp = await client.post(url, json={"emailIDs": emails}, headers=headers)
+    return url, resp
+
+
+async def enqueue_personal_sites(
+    graph: GraphClient, emails: list[str]
+) -> tuple[bool, str, dict]:
+    """Demande a SharePoint de creer les OneDrive (equivalent de Request-SPOPersonalSite).
+
+    Renvoie (succes, message, detail brut de la reponse). Le detail part dans le
+    journal du traitement pour qu'un refus puisse etre analyse tel quel.
+    """
+    if not emails:
+        return True, "", {}
+    # La route accepte 200 adresses par appel.
+    for start in range(0, len(emails), 200):
+        url, resp = await post_enqueue(graph, emails[start:start + 200])
+        if resp.status_code >= 400:
+            detail = {"url": url, **describe_response(resp)}
+            diag = detail["x-ms-diagnostics"]
+            message = f"HTTP {resp.status_code}" + (f" — {diag}" if diag else "")
+            return False, message, detail
+    return True, "", {}
 
 
 async def existing_shortcut_names(graph: GraphClient, user_drive_id: str) -> set[str]:

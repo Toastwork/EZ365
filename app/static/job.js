@@ -24,6 +24,13 @@
     li.children[0].textContent = time;
     li.children[1].textContent = event.step;
     li.children[2].textContent = event.message;
+    if (event.detail) {
+      const box = document.createElement("details");
+      box.className = "log-detail";
+      box.innerHTML = "<summary>detail</summary><pre></pre>";
+      box.querySelector("pre").textContent = event.detail;
+      li.children[2].appendChild(box);
+    }
     log.appendChild(li);
   }
 

@@ -340,8 +340,15 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
 .run-options .muted { margin: 0; }
 @media (max-width: 760px) { .run-options { grid-template-columns: 1fr; } }
 
-/* ---------- certificat ---------- */
-.cert-facts th { width: 40%; text-transform: none; letter-spacing: 0; font-size: .84rem; }
-.consent-actions.row { flex-direction: row; flex-wrap: wrap; align-items: center; }
-.steps { padding-left: 1.2rem; }
-.steps li { margin-bottom: .8rem; line-height: 1.55; }
+/* ---------- diagnostic et detail du journal ---------- */
+.diag-steps { padding-left: 1.2rem; margin: 0; }
+.diag-steps li { margin-bottom: .7rem; }
+.diag-head { display: flex; gap: .5rem; align-items: center; }
+.diag-summary { margin: .2rem 0 0; font-size: .86rem; color: var(--muted); word-break: break-word; }
+.diag-copy-head { display: flex; justify-content: space-between; align-items: center; }
+.diag-report, .log-detail pre {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .7rem; font-size: .78rem; white-space: pre-wrap; word-break: break-word;
+  max-height: 480px; overflow: auto; margin: .4rem 0 0;
+}
+.log-detail summary { cursor: pointer; font-size: .75rem; color: var(--muted); }

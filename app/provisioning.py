@@ -473,22 +473,24 @@ async def provision_onedrives(
     )
 
     # 1. Demande explicite a SharePoint : la seule voie fiable en app-only.
+    raw: dict = {}
     try:
-        queued, detail = await bounded(
+        queued, detail, raw = await bounded(
             sharepoint.enqueue_personal_sites(graph, [e["upn"] for e in targets]),
             60,
             "Demande de creation des OneDrive",
         )
     except (StepTimeout, GraphError, ConsentError, httpx.HTTPError) as exc:
         queued, detail = False, str(exc)
+        raw = {"exception": type(exc).__name__, "message": str(exc)}
     if queued:
         ctx.info("onedrive", "Creation des OneDrive demandee a SharePoint.")
     else:
         ctx.warn(
             "onedrive",
-            f"Demande de creation des OneDrive refusee : {detail} Repli sur "
-            "l'amorce Graph, qui ne cree pas le OneDrive d'un compte jamais "
-            "connecte.",
+            f"Demande de creation des OneDrive refusee ({detail}). Repli sur "
+            "l'amorce Graph. Detail brut ci-dessous.",
+            raw,
         )
 
     # 2. Amorce Graph, utile a elle seule sur certains tenants.

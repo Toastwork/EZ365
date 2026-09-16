@@ -69,9 +69,9 @@ asyncio.run(tree_tests())
 
 # --- raccourcis multiples par utilisateur --------------------------------
 class Ctx:
-    def __init__(self): self.actor = "testeur"; self.msgs = []
-    def info(self, s, m, d=None): self.msgs.append(("info", m))
-    def warn(self, s, m, d=None): self.msgs.append(("warn", m))
+    def __init__(self): self.actor = "testeur"; self.msgs = []; self.details = []
+    def info(self, s, m, d=None): self.msgs.append(("info", m)); self.details.append(d)
+    def warn(self, s, m, d=None): self.msgs.append(("warn", m)); self.details.append(d)
     def error(self, s, m, d=None): self.msgs.append(("error", m))
     def success(self, s, m, d=None): self.msgs.append(("success", m))
 
@@ -542,10 +542,10 @@ async def timeout_tests():
         provisioning.ONEDRIVE_DELAY = 0.05
         try:
             async def enqueue_ok(graph, emails):
-                return True, ""
+                return True, "", {}
 
             async def enqueue_ko(graph, emails):
-                return False, "HTTP 403"
+                return False, "HTTP 401", {"status": 401, "body": "Unsupported app only token."}
 
             class Drives:
                 def __init__(self, ready_after=None):
@@ -593,6 +593,8 @@ async def timeout_tests():
             check("refus SharePoint signale, repli Graph",
                   any("refusee" in m for lvl, m in ctx.msgs)
                   and entries[0]["onedrive"] == "non provisionne", ctx.msgs)
+            check("detail brut du refus transmis au journal",
+                  any(d and d.get("status") == 401 for d in ctx.details), ctx.details)
         finally:
             provisioning.ONEDRIVE_DELAY = saved_delay
             sharepoint.enqueue_personal_sites = saved_enqueue

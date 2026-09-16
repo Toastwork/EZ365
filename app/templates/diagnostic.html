@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Diagnostic OneDrive — {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Diagnostic OneDrive</h1>
+    <p class="muted small">
+      <a href="/tenants/{{ tenant.id }}">{{ tenant.display_name or tenant.id }}</a>
+      — rejoue, pour un seul compte, les appels d'un provisionnement et affiche
+      la reponse brute de Microsoft a chaque etape.
+    </p>
+  </div>
+</div>
+
+<form method="post" action="/tenants/{{ tenant.id }}/diagnostic" class="card">
+  <label for="upn">Compte a tester</label>
+  <div class="folder-add-row">
+    <input id="upn" name="upn" value="{{ upn or '' }}" required
+           placeholder="prenom.nom@{{ tenant.default_domain }}">
+    <button class="btn btn-primary" type="submit">Lancer le diagnostic</button>
+  </div>
+  <p class="muted small">
+    La derniere etape demande reellement la creation du OneDrive de ce compte :
+    sans effet s'il existe deja.
+  </p>
+</form>
+
+{% if steps %}
+<div class="card">
+  <h2>Resultat</h2>
+  <ol class="diag-steps">
+    {% for s in steps %}
+      <li>
+        <div class="diag-head">
+          <span class="pill {{ 'pill-ok' if s.ok else ('pill-ko' if s.ok == False else 'pill-warn') }}">
+            {{ 'OK' if s.ok else ('ECHEC' if s.ok == False else 'info') }}
+          </span>
+          <strong>{{ s.title }}</strong>
+        </div>
+        {% if s.summary %}<div class="diag-summary">{{ s.summary }}</div>{% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+</div>
+
+<div class="card">
+  <div class="diag-copy-head">
+    <h2>Rapport a copier</h2>
+    <button type="button" class="btn btn-small" onclick="copyReport(this)">Copier</button>
+  </div>
+  <p class="muted small">Aucun jeton n'y figure : seulement ses revendications (ressource, application, roles).</p>
+  <pre id="diag-report" class="diag-report">{{ report }}</pre>
+</div>
+
+<script>
+function copyReport(button) {
+  const text = document.getElementById("diag-report").textContent;
+  navigator.clipboard.writeText(text).then(function () {
+    button.textContent = "Copie !";
+    setTimeout(function () { button.textContent = "Copier"; }, 1500);
+  });
+}
+</script>
+{% endif %}
+
+{% endblock %}

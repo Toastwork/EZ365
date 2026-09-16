@@ -49,26 +49,10 @@ administrateur :
 | `Sites.ReadWrite.All` | lire les sites et bibliotheques |
 | `Files.ReadWrite.All` | provisionner les OneDrive et y creer les raccourcis |
 
-### Certificat SharePoint (creation des OneDrive)
-
-La creation du OneDrive d'un compte **qui ne s'est jamais connecte** et celle
-des sites de communication passent par l'API REST de SharePoint. Or
-SharePoint **refuse les jetons obtenus avec un secret client** : il exige un
-certificat. EZ365 en genere un au premier besoin (cle privee chiffree avec
-`STORAGE_KEY` dans `/data`), ou utilise celui fourni via `MS_CERT_PATH`.
-
-Mise en place, une fois pour toutes — la page **« Certificat SharePoint »**
-de l'interface la detaille et propose le fichier :
-
-1. telecharger le `.cer` et le deposer dans *Certificats & secrets* de
-   l'application Azure (l'empreinte doit correspondre) ;
-2. ajouter la permission **applicative** `Sites.FullControl.All` de l'API
-   *SharePoint* ;
-3. renouveler le consentement de chaque client (« Connecter un tenant »).
-
-Les jetons Graph continuent d'utiliser `MS_CLIENT_SECRET`. Le certificat
-genere est valable deux ans ; `/healthz` indique son empreinte et le nombre
-de jours restants.
+Pour les **sites de communication** uniquement, ajouter la permission
+applicative `Sites.FullControl.All` de l'API *Office 365 SharePoint Online*
+(l'endpoint `_api/SPSiteManager/create` n'accepte pas les jetons Graph). Sans
+elle, le mode « site d'equipe » reste pleinement fonctionnel.
 
 L'URI de redirection declaree sur l'application doit correspondre exactement a
 `MS_REDIRECT_URI`, par exemple `https://ez365.acskm.fr:9001/ms/callback`.
@@ -91,7 +75,6 @@ existant — aucune variable n'a ete renommee.
 | `VAULT_ENABLED`, `VAULT_API_URL` | sidecar Bitwarden |
 | `BW_SERVER`, `BW_CLIENTID`, `BW_CLIENTSECRET`, `BW_PASSWORD` | sur le conteneur `bw-cli` uniquement |
 | `BW_EMAIL` | facultatif : repli e-mail + mot de passe maitre si la cle API est refusee |
-| `MS_CERT_PATH`, `MS_CERT_PASSWORD` | facultatif : certificat PEM (cle + certificat) a utiliser plutot que celui genere par EZ365 |
 
 Generer une cle de stockage :
 
@@ -175,6 +158,25 @@ SharePoint. Sans elle, il retombe sur une simple lecture Graph, qui ne
 declenche pas toujours la creation. Un OneDrive pas pret a la fin de l'attente
 finit de se creer seul : un nouveau passage en « utilisateur existant » pose
 alors les raccourcis manquants.
+
+### Diagnostic OneDrive
+
+Bouton **« Diagnostic OneDrive »** sur la fiche d'un client : pour un compte
+donne, il rejoue un a un les appels d'un provisionnement et affiche la reponse
+brute de Microsoft.
+
+1. jeton Graph et permissions applicatives accordees ;
+2. existence et etat du compte ;
+3. licence portant SharePoint / OneDrive, et etat du plan ;
+4. lecture du OneDrive par Graph ;
+5. jeton SharePoint d'administration et roles qu'il porte ;
+6. demande de creation du OneDrive (`CreatePersonalSiteEnqueueBulk`) : statut,
+   en-tetes `x-ms-diagnostics` et `request-id`, corps de la reponse.
+
+Le rapport se copie d'un clic et part aussi dans les logs du conteneur. Aucun
+jeton n'y figure, seulement ses revendications. Dans le journal d'un
+traitement, un evenement porteur d'un detail brut (refus SharePoint, trace
+d'erreur) se deplie avec « detail ».
 
 ### Liste des sites existants
 

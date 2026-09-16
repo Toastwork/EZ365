@@ -27,7 +27,11 @@
       <li class="log-{{ e.level }}" data-id="{{ e.id }}">
         <span class="log-time">{{ e.ts | dt }}</span>
         <span class="log-step">{{ e.step }}</span>
-        <span class="log-msg">{{ e.message }}</span>
+        <span class="log-msg">{{ e.message }}
+          {% if e.detail %}
+            <details class="log-detail"><summary>detail</summary><pre>{{ e.detail }}</pre></details>
+          {% endif %}
+        </span>
       </li>
     {% endfor %}
   </ol>

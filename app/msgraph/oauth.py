@@ -79,31 +79,14 @@ async def get_app_token(
                 return cached[0]
 
     settings = get_settings()
-    token_url = f"{LOGIN_HOST}/{tenant_id}/oauth2/v2.0/token"
     data = {
         "client_id": settings.ms_client_id,
+        "client_secret": settings.ms_client_secret,
         "grant_type": "client_credentials",
         "scope": scope,
     }
-    if is_sharepoint_scope(scope):
-        # SharePoint rejette les jetons issus d'un secret : assertion signee.
-        from . import certificate
-
-        try:
-            cert = certificate.load(create=True)
-        except certificate.CertificateError as exc:
-            raise ConsentError(str(exc)) from exc
-        data["client_assertion_type"] = (
-            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-        )
-        data["client_assertion"] = certificate.client_assertion(
-            cert, token_url, settings.ms_client_id
-        )
-    else:
-        data["client_secret"] = settings.ms_client_secret
-
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(token_url, data=data)
+        resp = await client.post(f"{LOGIN_HOST}/{tenant_id}/oauth2/v2.0/token", data=data)
 
     if resp.status_code != 200:
         payload = _safe_json(resp)
@@ -113,15 +96,6 @@ async def get_app_token(
             raise ConsentError(
                 "Secret client invalide : regenerez MS_CLIENT_SECRET dans Azure et "
                 "mettez-le a jour dans le compose."
-            )
-        if is_sharepoint_scope(scope) and (
-            "AADSTS700027" in desc or "AADSTS700024" in desc
-            or "key was not found" in desc.lower()
-        ):
-            raise ConsentError(
-                "Le certificat d'EZ365 n'est pas (encore) depose sur l'application "
-                "Azure : telechargez-le depuis la page « Certificat SharePoint » et "
-                "ajoutez-le dans Certificats & secrets."
             )
         if code == "invalid_client" or "AADSTS700016" in desc:
             raise ConsentError(
@@ -136,15 +110,6 @@ async def get_app_token(
     with _cache_lock:
         _token_cache[key] = (token, expires_at)
     return token
-
-
-def invalidate_all() -> None:
-    with _cache_lock:
-        _token_cache.clear()
-
-
-def is_sharepoint_scope(scope: str) -> bool:
-    return ".sharepoint.com/" in (scope or "").lower()
 
 
 def invalidate(tenant_id: str) -> None:
