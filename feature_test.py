@@ -329,6 +329,81 @@ async def folder_tests():
 
 asyncio.run(folder_tests())
 
+# --- acces au site existant : retrouver son groupe ----------------------
+async def site_group_tests():
+    from app.msgraph.client import GraphError
+
+    SITE = {"id": "h.sharepoint.com,AAA-111,BBB", "webUrl": "https://h.sharepoint.com/sites/documentsclient"}
+
+    class G:
+        def __init__(self, groups, roots):
+            self.groups, self.roots, self.filters = groups, roots, []
+        async def get_all(self, path, params=None, limit=0):
+            self.filters.append(params["$filter"])
+            return self.groups
+        async def get(self, path):
+            gid = path.split("/")[2]
+            if gid not in self.roots:
+                raise GraphError(404, "itemNotFound", "absent")
+            return {"id": self.roots[gid]}
+
+    # groupe trouve et confirme par son site racine
+    g = G([{"id": "G1", "groupTypes": ["Unified"]}], {"G1": "h.sharepoint.com,aaa-111,ccc"})
+    found = await sharepoint.find_site_group(g, SITE)
+    check("groupe du site retrouve", found == "G1", found)
+    check("recherche par alias de l'URL",
+          g.filters == ["mailNickname eq 'documentsclient'"], g.filters)
+
+    # meme alias mais autre site : pas de faux positif
+    g2 = G([{"id": "G2", "groupTypes": ["Unified"]}], {"G2": "h.sharepoint.com,zzz-999,ccc"})
+    check("homonyme ecarte", await sharepoint.find_site_group(g2, SITE) is None)
+
+    # groupe de securite (pas Unified) ignore
+    g3 = G([{"id": "G3", "groupTypes": []}], {"G3": "h.sharepoint.com,aaa-111,ccc"})
+    check("groupe non Microsoft 365 ignore", await sharepoint.find_site_group(g3, SITE) is None)
+
+    # URL sans /sites/ : site racine ou autre, rien a chercher
+    g4 = G([], {})
+    check("URL hors /sites/ sans recherche",
+          await sharepoint.find_site_group(g4, {"id": "x", "webUrl": "https://h.sharepoint.com/"}) is None
+          and g4.filters == [], g4.filters)
+
+    # apostrophe dans l'alias echappee pour le filtre OData
+    g5 = G([], {})
+    await sharepoint.find_site_group(g5, {"id": "x", "webUrl": "https://h/sites/l%27equipe"})
+    check("apostrophe echappee", g5.filters == ["mailNickname eq 'l''equipe'"], g5.filters)
+
+    # ajout aux membres : distinguer « deja membre » d'un vrai refus
+    class M:
+        def __init__(self, error=None): self.error = error
+        async def find_user(self, upn): return {"id": "U-" + upn, "displayName": upn, "usageLocation": "FR"}
+        async def create_user(self, payload): return {"id": "nouveau"}
+        async def update_user(self, uid, payload): pass
+        async def assign_license(self, uid, skus): pass
+        async def add_group_member(self, gid, uid):
+            if self.error: raise self.error
+
+    spec = provisioning.normalize_user({"upn": "a@c.fr", "existing_only": True}, "c.fr", "FR")
+    site = {"id": "S", "groupId": "G1"}
+
+    r = await provisioning.create_users(Ctx(), M(), [spec], site)
+    check("membre ajoute", r[0]["site_access"] == "membre ajoute", r[0])
+
+    deja = GraphError(400, "Request_BadRequest",
+        "One or more added object references already exist for the following modified properties: 'members'.")
+    r = await provisioning.create_users(Ctx(), M(deja), [spec], site)
+    check("deja membre sans erreur", r[0]["site_access"] == "deja membre" and not r[0]["errors"], r[0])
+
+    autre = GraphError(400, "Request_BadRequest", "Invalid object identifier.")
+    r = await provisioning.create_users(Ctx(), M(autre), [spec], site)
+    check("autre 400 remonte en erreur",
+          r[0]["site_access"] == "echec" and r[0]["errors"], r[0])
+
+    r = await provisioning.create_users(Ctx(), M(), [spec], {"id": "S", "groupId": None})
+    check("site sans groupe signale", r[0]["site_access"] == "non gere", r[0])
+
+asyncio.run(site_group_tests())
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)

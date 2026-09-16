@@ -16,6 +16,7 @@ import asyncio
 import logging
 import re
 import unicodedata
+from urllib.parse import unquote
 
 import httpx
 
@@ -103,6 +104,50 @@ async def wait_for_group_site(
         f"{int(attempts * delay)} s. Il finira probablement de se creer seul : "
         f"reverifiez dans quelques minutes. ({last_error})"
     )
+
+
+def _site_collection_id(site_id: str) -> str:
+    """Identifiant de collection d'un id Graph « hote,collection,web »."""
+    parts = (site_id or "").split(",")
+    return (parts[1] if len(parts) > 1 else site_id or "").lower()
+
+
+async def find_site_group(graph: GraphClient, site: dict) -> str | None:
+    """Groupe Microsoft 365 qui porte un site d'equipe, s'il y en a un.
+
+    Graph n'expose pas ce lien depuis le site. Un site d'equipe vit sous
+    /sites/<alias> ou <alias> est le mailNickname de son groupe : on cherche le
+    groupe par cet alias, puis on confirme en comparant son site racine au
+    site vise. Un site de communication n'a pas de groupe : on renvoie None.
+    """
+    match = re.search(r"/(?:sites|teams)/([^/?#]+)", site.get("webUrl") or "")
+    if not match:
+        return None
+    alias = unquote(match.group(1)).replace("'", "''")
+    try:
+        groups = await graph.get_all(
+            "/groups",
+            params={
+                "$filter": f"mailNickname eq '{alias}'",
+                "$select": "id,displayName,groupTypes",
+            },
+            limit=10,
+        )
+    except GraphError as exc:
+        log.warning("Recherche du groupe du site impossible : %s", exc)
+        return None
+
+    wanted = _site_collection_id(site.get("id", ""))
+    for group in groups:
+        if "Unified" not in (group.get("groupTypes") or []):
+            continue
+        try:
+            root = await graph.get(f"/groups/{group['id']}/sites/root")
+        except GraphError:
+            continue
+        if root and _site_collection_id(root.get("id", "")) == wanted:
+            return group["id"]
+    return None
 
 
 # ---------------------------------------------------------------------------

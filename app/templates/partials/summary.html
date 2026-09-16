@@ -14,7 +14,7 @@
   {% if data.users %}
   <table class="table compact">
     <thead>
-      <tr><th>Utilisateur</th><th>Compte</th><th>Licences</th><th>OneDrive</th><th>Raccourci</th><th>Coffre</th></tr>
+      <tr><th>Utilisateur</th><th>Compte</th><th>Acces site</th><th>Licences</th><th>OneDrive</th><th>Raccourci</th><th>Coffre</th></tr>
     </thead>
     <tbody>
     {% for u in data.users %}
@@ -32,6 +32,12 @@
         <td>{% if u.created %}<span class="pill pill-ok">cree</span>
             {% elif u.existing %}<span class="pill pill-warn">existant</span>
             {% else %}<span class="pill pill-ko">echec</span>{% endif %}</td>
+        <td class="small">
+          {% if u.site_access == 'echec' %}<span class="pill pill-ko">echec</span>
+          {% elif u.site_access == 'non gere' %}<span class="pill pill-warn">a accorder</span>
+          {% elif u.site_access %}<span class="pill pill-ok">{{ u.site_access }}</span>
+          {% else %}—{% endif %}
+        </td>
         <td class="small">{{ u.license_names | join(', ') if u.license_names else '—' }}</td>
         <td class="small">{{ u.onedrive }}</td>
         <td class="small">
@@ -50,7 +56,7 @@
       </tr>
       {% if u.errors %}
       <tr class="row-error-detail">
-        <td colspan="6" class="small">⚠ {{ u.errors | join(' · ') }}</td>
+        <td colspan="7" class="small">⚠ {{ u.errors | join(' · ') }}</td>
       </tr>
       {% endif %}
     {% endfor %}

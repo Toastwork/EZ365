@@ -132,6 +132,24 @@ C'est utile quand la creation du site et l'arrivee des utilisateurs ne se font
 pas le meme jour : on prepare l'espace documentaire, puis on revient plus tard
 provisionner les comptes en choisissant « site existant ».
 
+### Acces des utilisateurs au site
+
+Un compte n'a de droits sur un site d'equipe que s'il est **membre de son
+groupe Microsoft 365** : sans cela, il ne voit pas le site et ne peut pas en
+synchroniser la bibliotheque.
+
+* **Site cree dans le traitement** — les comptes traites sont ajoutes aux
+  membres du groupe qui vient d'etre cree.
+* **Site existant** — EZ365 retrouve le groupe a partir de l'adresse du site
+  (`/sites/<alias>`, confirmee par le site racine du groupe), puis y ajoute les
+  comptes. C'est le chemin suivi apres « Creer le site maintenant ».
+* **Site de communication** — il n'a pas de groupe : l'acces est a accorder
+  depuis SharePoint, le journal le signale.
+
+Le recapitulatif porte une colonne « Acces site » (`membre ajoute`, `deja
+membre`, `a accorder`, `echec`). Apres un ajout, SharePoint peut mettre
+plusieurs minutes a refleter le nouveau droit.
+
 ### Dossiers d'un nouveau site
 
 Lors de la creation d'un site (equipe ou communication), un bloc « Dossiers a

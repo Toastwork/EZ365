@@ -122,7 +122,22 @@ async def ensure_site(ctx: JobContext, graph: GraphClient, spec: dict) -> dict |
             raise ValueError("Aucun site existant selectionne.")
         site = await graph.get(f"/sites/{site_id}")
         ctx.success("sharepoint", f"Site existant utilise : {site.get('webUrl')}")
-        return {"id": site["id"], "webUrl": site.get("webUrl"), "groupId": None}
+        # Sans son groupe, les comptes traites n'obtiendraient aucun droit sur
+        # le site : ils ne le verraient pas et ne pourraient pas le synchroniser.
+        group_id = await sharepoint.find_site_group(graph, site)
+        if group_id:
+            ctx.info(
+                "sharepoint",
+                "Site d'equipe : les comptes traites seront ajoutes a ses membres.",
+            )
+        else:
+            ctx.warn(
+                "sharepoint",
+                "Aucun groupe Microsoft 365 trouve pour ce site (site de "
+                "communication ou alias renomme) : les comptes n'y seront pas "
+                "ajoutes, l'acces est a accorder depuis SharePoint.",
+            )
+        return {"id": site["id"], "webUrl": site.get("webUrl"), "groupId": group_id}
 
     display_name = (spec.get("display_name") or "").strip()
     if not display_name:
@@ -155,6 +170,11 @@ async def ensure_site(ctx: JobContext, graph: GraphClient, spec: dict) -> dict |
         )
         site = await sharepoint.wait_for_site_by_path(graph, hostname, f"sites/{path}")
         ctx.success("sharepoint", f"Site de communication pret : {site.get('webUrl')}")
+        ctx.warn(
+            "sharepoint",
+            "Un site de communication n'a pas de groupe : les comptes n'y sont "
+            "pas ajoutes automatiquement, l'acces est a accorder depuis SharePoint.",
+        )
         return {"id": site["id"], "webUrl": site.get("webUrl"), "groupId": None}
 
     raise ValueError(f"Mode de site inconnu : {mode}")
@@ -250,6 +270,7 @@ async def create_users(
             "vault_name": spec.get("vault_name") or "",
             "license_names": list(spec.get("sku_names") or []),
             "vault": "en attente",
+            "site_access": "",
             "errors": [],
         }
         try:
@@ -320,11 +341,23 @@ async def create_users(
             if site and site.get("groupId"):
                 try:
                     await graph.add_group_member(site["groupId"], entry["id"])
-                    ctx.info("sharepoint", f"{spec['upn']} ajoute au groupe du site.")
+                    entry["site_access"] = "membre ajoute"
+                    ctx.success("sharepoint", f"{spec['upn']} ajoute aux membres du site.")
                 except GraphError as exc:
-                    if exc.status not in (400,):  # 400 = deja membre
-                        entry["errors"].append(f"groupe : {exc.friendly}")
-                        ctx.warn("sharepoint", f"Ajout au groupe impossible : {exc.friendly}")
+                    # Seul ce 400-la signifie « deja membre » ; les autres sont
+                    # de vrais refus et doivent se voir.
+                    if exc.status == 400 and "already exist" in exc.message.lower():
+                        entry["site_access"] = "deja membre"
+                    else:
+                        entry["site_access"] = "echec"
+                        entry["errors"].append(f"acces au site : {exc.friendly}")
+                        ctx.error(
+                            "sharepoint",
+                            f"{spec['upn']} n'a pas pu etre ajoute aux membres du "
+                            f"site : {exc.friendly}",
+                        )
+            elif site:
+                entry["site_access"] = "non gere"
 
         except GraphError as exc:
             entry["errors"].append(exc.friendly)
