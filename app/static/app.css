@@ -325,3 +325,7 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
 .step-title { font-weight: 600; font-size: .98rem; }
 .step-info { margin-left: auto; font-size: .82rem; color: var(--muted); }
 .step-body { padding: 0 .2rem 1.2rem; }
+
+/* ---------- retour de consentement ---------- */
+.consent-actions { display: flex; flex-direction: column; gap: .5rem; margin-top: 1.2rem; }
+.consent-actions .btn { text-align: center; }

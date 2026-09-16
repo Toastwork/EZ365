@@ -6,12 +6,27 @@
     <div class="big-icon">{{ '✓' if ok else '✕' }}</div>
     <h1>{{ title }}</h1>
     <p class="muted">{{ message }}</p>
-    {% if ok and operator %}
-      <a class="btn btn-primary" href="/tenants/{{ tenant_id }}">Ouvrir la fiche du client</a>
+
+    {% if operator %}
+      {# Technicien connecte : il enchaine sur le tenant ou revient a la liste. #}
+      <div class="consent-actions">
+        {% if ok %}
+          <a class="btn btn-primary" href="/tenants/{{ tenant_id }}">Acceder au tenant</a>
+        {% endif %}
+        <a class="btn" href="/">Retour au tableau de bord</a>
+      </div>
     {% elif ok %}
-      <p class="muted small">Vous pouvez fermer cette fenetre : l'equipe informatique prend le relais.</p>
+      {# Cette page est aussi vue par l'administrateur du client a qui l'on a
+         transmis le lien : on ne lui propose pas d'entrer dans EZ365. #}
+      <p class="muted small">
+        Vous pouvez fermer cette fenetre : l'equipe informatique prend le relais.
+      </p>
+      <p class="muted small">
+        Technicien EZ365 dont la session a expire ?
+        <a href="/login?next=/tenants/{{ tenant_id }}">Se reconnecter</a>
+      </p>
     {% else %}
-      <a class="btn" href="/">Retour</a>
+      <a class="btn" href="/">Retour au tableau de bord</a>
     {% endif %}
   </div>
 </div>

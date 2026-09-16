@@ -60,6 +60,13 @@ with TestClient(app) as client:
                    params={"state": state, "tenant": "11111111-2222-3333-4444-555555555555",
                            "admin_consent": "True"})
     check("consentement enregistre malgre Graph injoignable", r.status_code == 200)
+    check("technicien connecte : acces au tenant propose",
+          'href="/tenants/11111111-2222-3333-4444-555555555555"' in r.text
+          and "Acceder au tenant" in r.text)
+    check("technicien connecte : retour au tableau de bord propose",
+          "Retour au tableau de bord" in r.text)
+    check("technicien connecte : pas de message pour le client",
+          "fermer cette fenetre" not in r.text)
 
     row = db.query_one("SELECT * FROM tenants")
     check("tenant persiste en base", row is not None and row["id"].startswith("11111111"))
@@ -85,6 +92,18 @@ with TestClient(app) as client:
 
     r = client.get(f"/jobs/{job_id}/events")
     check("flux d'evenements JSON", r.status_code == 200 and "events" in r.json())
+
+    anonymous = TestClient(app)
+    link = client.get("/tenants/connect", follow_redirects=False).headers["location"]
+    fresh_state = link.split("state=")[1].split("&")[0]
+    r = anonymous.get("/ms/callback",
+                      params={"state": fresh_state, "tenant": "99999999-0000-0000-0000-000000000000",
+                              "admin_consent": "True"})
+    check("admin du client : invite a fermer la fenetre", "fermer cette fenetre" in r.text)
+    check("admin du client : aucun bouton vers EZ365",
+          "Acceder au tenant" not in r.text and "Retour au tableau de bord" not in r.text)
+    check("admin du client : reconnexion technicien possible",
+          "/login?next=/tenants/99999999-0000-0000-0000-000000000000" in r.text)
 
     r = client.get("/tenants/inconnu")
     check("tenant inconnu -> 404 propre", r.status_code == 404)
