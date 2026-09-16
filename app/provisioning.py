@@ -650,7 +650,25 @@ async def add_shortcuts(
                 done.append({"folder": shown, "status": "delai depasse"})
                 entry["errors"].append(f"raccourci : {exc} (a verifier)")
                 ctx.warn("raccourcis", f"{exc} — raccourci suivant, a verifier.")
-            except (sharepoint.SharePointError, GraphError) as exc:
+            except GraphError as exc:
+                # Graph reconnait un raccourci vers la meme cible meme sous un
+                # autre nom (« Documents » quand l'utilisateur l'a ajoute
+                # lui-meme) : ce n'est pas un echec, le raccourci est la.
+                if exc.status == 409 and "shortcut already exist" in exc.message.lower():
+                    existing.add(label.casefold())
+                    done.append({"folder": shown, "status": "deja present"})
+                    ctx.info(
+                        "raccourcis",
+                        f"Raccourci vers « {shown} » deja present chez {entry['upn']} "
+                        "(sous un autre nom).",
+                    )
+                    continue
+                done.append({"folder": shown, "status": "echec"})
+                entry["errors"].append(f"raccourci « {shown} » : {exc}")
+                ctx.warn(
+                    "raccourcis", f"Raccourci « {label} » impossible pour {entry['upn']} : {exc}"
+                )
+            except sharepoint.SharePointError as exc:
                 done.append({"folder": shown, "status": "echec"})
                 entry["errors"].append(f"raccourci « {shown} » : {exc}")
                 ctx.warn(

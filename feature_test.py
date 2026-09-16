@@ -657,6 +657,36 @@ async def timeout_tests():
 
 asyncio.run(timeout_tests())
 
+# --- raccourci deja present sous un autre nom (409) ------------------------
+async def conflict_tests():
+    from app.msgraph.client import GraphError
+
+    async def resolve(ctx, graph, site, folder):
+        return {"driveId": "S", "itemId": "i", "name": "Documents"}
+
+    async def none_existing(graph, drive_id):
+        return set()
+
+    async def conflict(graph, user_drive, src, item, name):
+        if name == "Deja":
+            raise GraphError(409, "notAllowed", "That shortcut already exists.")
+        if name == "Refuse":
+            raise GraphError(409, "nameAlreadyExists", "Name already exists and is not a shortcut.")
+
+    provisioning.resolve_shortcut_target = resolve
+    sharepoint.existing_shortcut_names = none_existing
+    sharepoint.add_shortcut = conflict
+    entries = [{"upn": "c@c.fr", "drive_id": "D", "errors": [],
+                "shortcut_folders": ["Deja", "Refuse"]}]
+    await provisioning.add_shortcuts(Ctx(), None, entries, {"id": "S"}, "Site")
+    statuses = [d["status"] for d in entries[0]["shortcuts"]]
+    check("409 « already exists » -> deja present, sans erreur",
+          statuses[0] == "deja present"
+          and not any("Deja" in e for e in entries[0]["errors"]), entries[0])
+    check("autre 409 reste un echec", statuses[1] == "echec", statuses)
+
+asyncio.run(conflict_tests())
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)
