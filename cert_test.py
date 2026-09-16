@@ -170,6 +170,9 @@ with TestClient(app) as client:
     page = client.get("/settings/certificate").text
     check("page : empreinte affichee", current.thumbprint in page)
     check("page : procedure Azure", "Sites.FullControl.All" in page and "Certificats" in page)
+    check("page : lien direct vers les certificats de l'app",
+          "ApplicationMenuBlade/~/Credentials/appId/11111111-aaaa-bbbb-cccc-222222222222" in page)
+    check("page : aide pour retrouver l'app", "Toutes les applications" in page)
 
     r = client.get("/settings/certificate.cer")
     got = x509.load_der_x509_certificate(r.content).fingerprint(hashes.SHA1()).hex().upper()

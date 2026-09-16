@@ -360,3 +360,5 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
 
 .sp-access { justify-content: space-between; flex-wrap: wrap; }
 .sp-access > div { display: flex; flex-direction: column; gap: .15rem; }
+
+.portal-links { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-bottom: .4rem; }

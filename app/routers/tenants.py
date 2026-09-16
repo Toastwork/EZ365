@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from .. import db, diagnostics, jobs
+from ..config import get_settings
 from ..msgraph import certificate, oauth, sharepoint
 from ..msgraph.client import GraphClient, GraphError
 from ..security import Operator, current_operator
@@ -23,6 +24,26 @@ def get_tenant(tenant_id: str) -> dict:
     if row is None:
         raise HTTPException(status_code=404, detail="Tenant inconnu")
     return dict(row)
+
+
+ENTRA_APP_BLADE = (
+    "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/"
+    "ApplicationMenuBlade/~/{section}/appId/{app_id}"
+)
+
+
+def azure_app_links(app_id: str) -> dict:
+    """Liens directs vers l'inscription de l'application EZ365.
+
+    L'inscription se cache facilement : onglet « Applications detenues » par
+    defaut, ou mauvais repertoire. Ces liens y menent sans chercher.
+    """
+    if not app_id:
+        return {}
+    return {
+        section: ENTRA_APP_BLADE.format(section=section, app_id=app_id)
+        for section in ("Overview", "Credentials", "CallAnAPI")
+    }
 
 
 def merge_sites(found: list[dict], remembered: list[dict]) -> list[dict]:
@@ -351,7 +372,12 @@ async def certificate_page(request: Request, operator: Operator = Depends(curren
     return render(
         request,
         "certificate.html",
-        {"cert": cert, "error": error, "statuses": statuses},
+        {
+            "cert": cert,
+            "error": error,
+            "statuses": statuses,
+            "portal": azure_app_links(get_settings().ms_client_id),
+        },
     )
 
 

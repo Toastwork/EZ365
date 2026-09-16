@@ -82,6 +82,20 @@
 
 <div class="card">
   <h2>Mise en place — une seule fois</h2>
+  {% if portal %}
+  <div class="portal-links">
+    <span class="muted small">Acces direct (connecte sur le tenant qui heberge EZ365) :</span>
+    <a class="btn btn-small" href="{{ portal.Overview }}" target="_blank" rel="noopener">Inscription de l'application</a>
+    <a class="btn btn-small" href="{{ portal.Credentials }}" target="_blank" rel="noopener">Certificats &amp; secrets</a>
+    <a class="btn btn-small" href="{{ portal.CallAnAPI }}" target="_blank" rel="noopener">Autorisations de l'API</a>
+  </div>
+  <p class="muted small">
+    Introuvable dans « Inscriptions d'applications » ? Ouvrez l'onglet
+    « Toutes les applications » (et non « Applications detenues »), verifiez le
+    repertoire actif en haut a droite, puis cherchez l'ID client
+    <code>{{ portal.Overview.rsplit('/', 1)[-1] }}</code>.
+  </p>
+  {% endif %}
   <ol class="steps">
     <li>
       <strong>Deposer le certificat sur l'application Azure.</strong>
