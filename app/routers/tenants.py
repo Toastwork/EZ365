@@ -4,10 +4,10 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from .. import db, jobs
-from ..msgraph import oauth, sharepoint
+from ..msgraph import certificate, oauth, sharepoint
 from ..msgraph.client import GraphClient, GraphError
 from ..security import Operator, current_operator
 from ..templating import flash, render
@@ -274,6 +274,51 @@ async def tenant_forget(
         "info",
     )
     return RedirectResponse("/", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Certificat SharePoint
+# ---------------------------------------------------------------------------
+@router.get("/settings/certificate")
+async def certificate_page(request: Request, operator: Operator = Depends(current_operator)):
+    cert, error = None, ""
+    try:
+        cert = certificate.load(create=True)
+    except certificate.CertificateError as exc:
+        error = str(exc)
+    return render(request, "certificate.html", {"cert": cert, "error": error})
+
+
+@router.get("/settings/certificate.cer")
+async def certificate_download(operator: Operator = Depends(current_operator)):
+    try:
+        cert = certificate.load(create=True)
+    except certificate.CertificateError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return Response(
+        content=cert.public_der(),
+        media_type="application/pkix-cert",
+        headers={"Content-Disposition": 'attachment; filename="ez365-sharepoint.cer"'},
+    )
+
+
+@router.post("/settings/certificate/regenerate")
+async def certificate_regenerate(
+    request: Request, operator: Operator = Depends(current_operator)
+):
+    try:
+        cert = certificate.regenerate()
+    except certificate.CertificateError as exc:
+        flash(request, str(exc), "error")
+        return RedirectResponse("/settings/certificate", status_code=303)
+    oauth.invalidate_all()
+    db.audit(operator.username, "certificat.regenere", detail=cert.thumbprint)
+    flash(
+        request,
+        "Nouveau certificat genere : deposez-le dans Azure, l'ancien ne sert plus.",
+        "info",
+    )
+    return RedirectResponse("/settings/certificate", status_code=303)
 
 
 @router.get("/api/tenants/{tenant_id}/resolve-site")

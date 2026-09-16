@@ -486,9 +486,9 @@ async def provision_onedrives(
     else:
         ctx.warn(
             "onedrive",
-            f"Demande a SharePoint refusee ({detail}). Repli sur l'amorce Graph, "
-            "moins fiable : la permission Sites.FullControl.All de l'API "
-            "SharePoint permet de s'en passer.",
+            f"Demande de creation des OneDrive refusee : {detail} Repli sur "
+            "l'amorce Graph, qui ne cree pas le OneDrive d'un compte jamais "
+            "connecte.",
         )
 
     # 2. Amorce Graph, utile a elle seule sur certains tenants.

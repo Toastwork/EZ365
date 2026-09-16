@@ -109,6 +109,20 @@ async def healthz():
         db_ok = False
         log.error("Base de donnees inaccessible : %s", exc)
 
+    cert_info: dict = {"present": False}
+    try:
+        from .msgraph import certificate
+
+        cert = certificate.load(create=False)
+        if cert:
+            cert_info = {
+                "present": True,
+                "thumbprint": cert.thumbprint,
+                "days_left": cert.days_left,
+            }
+    except Exception as exc:  # noqa: BLE001
+        cert_info = {"present": False, "error": str(exc)}
+
     healthy = db_ok and not settings.missing()
     return JSONResponse(
         {
@@ -117,6 +131,7 @@ async def healthz():
             "vault": {"enabled": settings.vault_enabled, "ready": vault_ready,
                       "detail": vault_message},
             "build": settings.build_ref,
+            "sharepoint_certificate": cert_info,
             "config_missing": settings.missing(),
         },
         status_code=200 if healthy else 503,

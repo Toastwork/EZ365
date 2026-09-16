@@ -46,6 +46,10 @@ class Settings:
     ms_client_id: str = field(default_factory=lambda: _str("MS_CLIENT_ID"))
     ms_client_secret: str = field(default_factory=lambda: _str("MS_CLIENT_SECRET"))
     ms_redirect_uri: str = field(default_factory=lambda: _str("MS_REDIRECT_URI"))
+    # Certificat facultatif fourni par l'exploitant (PEM : cle + certificat).
+    # A defaut, EZ365 en genere un dans /data. Indispensable pour SharePoint.
+    ms_cert_path: str = field(default_factory=lambda: _str("MS_CERT_PATH"))
+    ms_cert_password: str = field(default_factory=lambda: _str("MS_CERT_PASSWORD"))
 
     # --- Coffre Bitwarden / Vaultwarden (sidecar bw serve) ----------------
     vault_enabled: bool = field(default_factory=lambda: _bool("VAULT_ENABLED", False))

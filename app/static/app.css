@@ -339,3 +339,9 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
                gap: .9rem; align-items: end; }
 .run-options .muted { margin: 0; }
 @media (max-width: 760px) { .run-options { grid-template-columns: 1fr; } }
+
+/* ---------- certificat ---------- */
+.cert-facts th { width: 40%; text-transform: none; letter-spacing: 0; font-size: .84rem; }
+.consent-actions.row { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.steps { padding-left: 1.2rem; }
+.steps li { margin-bottom: .8rem; line-height: 1.55; }
