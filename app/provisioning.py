@@ -488,8 +488,9 @@ async def provision_onedrives(
     else:
         ctx.warn(
             "onedrive",
-            f"Demande de creation des OneDrive refusee ({detail}). Repli sur "
-            "l'amorce Graph. Detail brut ci-dessous.",
+            f"Demande de creation des OneDrive refusee : {detail} Repli sur "
+            "l'amorce Graph, qui ne cree pas le OneDrive d'un compte jamais "
+            "connecte. Detail brut ci-dessous.",
             raw,
         )
 

@@ -1,13 +1,14 @@
 """Tableau de bord, consentement administrateur et fiche tenant."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from .. import db, diagnostics, jobs
-from ..msgraph import oauth, sharepoint
+from ..msgraph import certificate, oauth, sharepoint
 from ..msgraph.client import GraphClient, GraphError
 from ..security import Operator, current_operator
 from ..templating import flash, render
@@ -75,6 +76,16 @@ async def connect(request: Request, operator: Operator = Depends(current_operato
     return RedirectResponse(url, status_code=303)
 
 
+@router.get("/tenants/{tenant_id}/reconsent")
+async def reconsent(request: Request, tenant_id: str, operator: Operator = Depends(current_operator)):
+    """Renouvelle le consentement d'un client, par exemple apres l'ajout
+    d'une permission a l'application."""
+    get_tenant(tenant_id)
+    oauth.purge_stale_states()
+    db.audit(operator.username, "tenant.consent.renouvele", target=tenant_id)
+    return RedirectResponse(oauth.build_consent_url(operator.username, tenant_id), status_code=303)
+
+
 @router.get("/tenants/connect/link")
 async def connect_link(request: Request, operator: Operator = Depends(current_operator)):
     """Genere un lien a transmettre a l'administrateur du client."""
@@ -135,6 +146,7 @@ async def ms_callback(
         status_label = "a verifier"
         log.warning("Lecture du tenant %s impossible juste apres consentement : %s", tenant, exc)
 
+    oauth.invalidate(tenant)
     existing = db.query_one("SELECT id FROM tenants WHERE id = ?", (tenant,))
     if existing:
         db.execute(
@@ -189,6 +201,11 @@ async def tenant_detail(
         graph_error = getattr(exc, "friendly", str(exc))
         log.warning("Lecture du tenant %s impossible : %s", tenant_id, exc)
 
+    try:
+        sp_access = await asyncio.wait_for(diagnostics.sharepoint_access(tenant_id), 15)
+    except asyncio.TimeoutError:
+        sp_access = {"state": "error", "message": "pas de reponse de Microsoft en 15 s"}
+
     vault_ready, vault_message = await bitwarden.is_ready()
     orgs, collections = [], []
     if vault_ready:
@@ -207,6 +224,7 @@ async def tenant_detail(
             "domains": domains or ([tenant["default_domain"]] if tenant.get("default_domain") else []),
             "sites": merge_sites(sites, db.remembered_sites(tenant_id)),
             "graph_error": graph_error,
+            "sp_access": sp_access,
             "vault_ready": vault_ready,
             "vault_message": vault_message,
             "vault_orgs": orgs,
@@ -306,6 +324,67 @@ async def diagnostic_run(
             "report": diagnostics.as_text(tenant_id, upn, steps),
         },
     )
+
+
+# Certificat SharePoint
+# ---------------------------------------------------------------------------
+@router.get("/settings/certificate")
+async def certificate_page(request: Request, operator: Operator = Depends(current_operator)):
+    cert, error = None, ""
+    try:
+        cert = certificate.load(create=True)
+    except certificate.CertificateError as exc:
+        error = str(exc)
+
+    tenants = [dict(r) for r in db.query(
+        "SELECT id, display_name FROM tenants ORDER BY display_name COLLATE NOCASE"
+    )]
+
+    async def check(tenant: dict) -> dict:
+        try:
+            state = await asyncio.wait_for(diagnostics.sharepoint_access(tenant["id"]), 20)
+        except asyncio.TimeoutError:
+            state = {"state": "error", "message": "pas de reponse de Microsoft en 20 s"}
+        return {**tenant, **state}
+
+    statuses = await asyncio.gather(*(check(t) for t in tenants)) if cert else []
+    return render(
+        request,
+        "certificate.html",
+        {"cert": cert, "error": error, "statuses": statuses},
+    )
+
+
+@router.get("/settings/certificate.cer")
+async def certificate_download(operator: Operator = Depends(current_operator)):
+    try:
+        cert = certificate.load(create=True)
+    except certificate.CertificateError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return Response(
+        content=cert.public_der(),
+        media_type="application/pkix-cert",
+        headers={"Content-Disposition": 'attachment; filename="ez365-sharepoint.cer"'},
+    )
+
+
+@router.post("/settings/certificate/regenerate")
+async def certificate_regenerate(
+    request: Request, operator: Operator = Depends(current_operator)
+):
+    try:
+        cert = certificate.regenerate()
+    except certificate.CertificateError as exc:
+        flash(request, str(exc), "error")
+        return RedirectResponse("/settings/certificate", status_code=303)
+    oauth.invalidate_all()
+    db.audit(operator.username, "certificat.regenere", detail=cert.thumbprint)
+    flash(
+        request,
+        "Nouveau certificat genere : deposez-le dans Azure, l'ancien ne sert plus.",
+        "info",
+    )
+    return RedirectResponse("/settings/certificate", status_code=303)
 
 
 @router.get("/api/tenants/{tenant_id}/resolve-site")

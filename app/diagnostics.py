@@ -53,6 +53,49 @@ def token_claims(token: str) -> dict:
     }
 
 
+REQUIRED_SHAREPOINT_ROLE = "Sites.FullControl.All"
+_hostnames: dict[str, str] = {}
+
+
+async def sharepoint_access(tenant_id: str) -> dict:
+    """Etat de l'acces SharePoint d'un tenant, pour guider l'operateur.
+
+    state : ok | reconsent (permission pas encore acceptee par le client)
+            | certificate (certificat pas depose sur l'application Azure)
+            | error
+    """
+    try:
+        hostname = _hostnames.get(tenant_id)
+        if not hostname:
+            async with GraphClient(tenant_id) as graph:
+                hostname = await graph.sharepoint_hostname()
+            _hostnames[tenant_id] = hostname
+        token = await oauth.get_app_token(
+            tenant_id, scope=f"https://{sharepoint.admin_host_for(hostname)}/.default"
+        )
+    except oauth.ConsentError as exc:
+        text = str(exc)
+        if "Certificats & secrets" in text or "certificat" in text.lower():
+            return {"state": "certificate", "message": text}
+        if "AADSTS65001" in text or "consent" in text.lower():
+            return {"state": "reconsent", "message": text}
+        return {"state": "error", "message": text}
+    except (GraphError, httpx.HTTPError) as exc:
+        return {"state": "error", "message": str(exc)}
+
+    roles = token_claims(token).get("roles") or []
+    if REQUIRED_SHAREPOINT_ROLE in roles:
+        return {"state": "ok", "message": "Acces SharePoint operationnel.", "roles": roles}
+    return {
+        "state": "reconsent",
+        "message": (
+            f"La permission {REQUIRED_SHAREPOINT_ROLE} n'est pas encore acceptee "
+            "par ce client."
+        ),
+        "roles": roles,
+    }
+
+
 def _graph_error(exc: GraphError) -> dict:
     return {"status": exc.status, "code": exc.code, "message": exc.message,
             "requete": exc.request}
@@ -131,7 +174,7 @@ async def onedrive_diagnostic(tenant_id: str, upn: str) -> list[Step]:
         steps.append(step)
 
         # 5. Jeton SharePoint administration ----------------------------------------------
-        step = Step("Jeton SharePoint administration (secret client)")
+        step = Step("Jeton SharePoint administration (certificat)")
         admin_host = ""
         try:
             hostname = await graph.sharepoint_hostname()

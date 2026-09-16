@@ -161,6 +161,74 @@ with TestClient(app) as client:
     r = anonymous.post("/tenants/t1/diagnostic", data={"upn": "x"}, follow_redirects=False)
     check("diagnostic reserve aux techniciens", r.status_code == 303, r.status_code)
 
+
+# --- etat de l'acces SharePoint par client ------------------------------------------
+async def access_tests():
+    diagnostics._hostnames.clear()
+
+    async def with_role(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
+        return fake_token({"roles": ["Sites.FullControl.All"]})
+
+    async def without_role(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
+        return fake_token({"roles": []})
+
+    async def cert_missing(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
+        raise oauth.ConsentError("Le certificat d'EZ365 n'est pas (encore) depose ... Certificats & secrets.")
+
+    async def broken(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
+        raise oauth.ConsentError("AADSTS90002: Tenant not found.")
+
+    for fake, expected in [(with_role, "ok"), (without_role, "reconsent"),
+                           (cert_missing, "certificate"), (broken, "error")]:
+        oauth.get_app_token = fake
+        state = await diagnostics.sharepoint_access("t1")
+        check(f"etat SharePoint : {expected}", state["state"] == expected, state)
+    check("hote SharePoint memorise", diagnostics._hostnames.get("t1") == "acme.sharepoint.com")
+    oauth.get_app_token = fake_token_for
+
+
+asyncio.run(access_tests())
+
+with TestClient(app) as client:
+    client.post("/login", data={"username": "testeur", "password": "motdepasse"})
+
+    r = client.get("/tenants/t1/reconsent", follow_redirects=False)
+    target = r.headers.get("location", "")
+    check("renouvellement cible le tenant",
+          r.status_code == 303 and target.startswith("https://login.microsoftonline.com/t1/adminconsent"),
+          target)
+
+    # sans role SharePoint : bandeau et bouton sur la fiche client
+    async def no_role(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
+        return fake_token({"roles": []})
+    oauth.get_app_token = no_role
+    page = client.get("/tenants/t1").text
+    check("bandeau de consentement sur la fiche",
+          "Renouveler le consentement" in page and "/tenants/t1/reconsent" in page)
+
+    page = client.get("/settings/certificate").text
+    check("page certificat : etat par client",
+          "consentement a renouveler" in page and "/tenants/t1/reconsent" in page)
+
+    async def ok_role(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
+        return fake_token({"roles": ["Sites.FullControl.All"]})
+    oauth.get_app_token = ok_role
+    page = client.get("/tenants/t1").text
+    check("pas de bandeau quand tout va bien", "Renouveler le consentement" not in page)
+    page = client.get("/settings/certificate").text
+    check("page certificat : client operationnel", "operationnel" in page)
+    oauth.get_app_token = fake_token_for
+
+    # le retour de consentement oublie les jetons en cache
+    invalidated = []
+    real_invalidate = oauth.invalidate
+    oauth.invalidate = lambda tid: invalidated.append(tid)
+    link = client.get("/tenants/connect", follow_redirects=False).headers["location"]
+    state = link.split("state=")[1].split("&")[0]
+    client.get("/ms/callback", params={"state": state, "tenant": "t1", "admin_consent": "True"})
+    oauth.invalidate = real_invalidate
+    check("jetons oublies apres consentement", "t1" in invalidated, invalidated)
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)
