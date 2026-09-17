@@ -54,6 +54,24 @@ def token_claims(token: str) -> dict:
 
 
 REQUIRED_SHAREPOINT_ROLE = "Sites.FullControl.All"
+REQUIRED_GRAPH_ROLES = (
+    "User.ReadWrite.All", "Organization.Read.All", "Domain.Read.All",
+    "Sites.ReadWrite.All",
+)
+# l'une ou l'autre forme suffit pour les groupes
+GROUP_ROLE_SETS = (("Group.ReadWrite.All",), ("Group.Create", "GroupMember.ReadWrite.All"))
+MISPLACED_HINT = (
+    "Sites.FullControl.All a ete ajoutee sous « Microsoft Graph » : elle doit "
+    "l'etre sous « SharePoint » (Autorisations de l'API → Ajouter une autorisation "
+    "→ SharePoint → Autorisations de l'application), puis consentement a renouveler."
+)
+
+
+def missing_graph_roles(roles: list) -> list[str]:
+    missing = [r for r in REQUIRED_GRAPH_ROLES if r not in roles]
+    if not any(all(r in roles for r in group) for group in GROUP_ROLE_SETS):
+        missing += [r for r in GROUP_ROLE_SETS[1] if r not in roles]
+    return missing
 _hostnames: dict[str, str] = {}
 
 
@@ -96,6 +114,12 @@ async def sharepoint_access(tenant_id: str) -> dict:
             pass
     if REQUIRED_SHAREPOINT_ROLE in roles:
         return {"state": "ok", "message": "Acces SharePoint operationnel.", "roles": roles}
+    try:
+        graph_roles = token_claims(await oauth.get_app_token(tenant_id)).get("roles") or []
+    except oauth.ConsentError:
+        graph_roles = []
+    if REQUIRED_SHAREPOINT_ROLE in graph_roles:
+        return {"state": "misplaced", "message": MISPLACED_HINT, "roles": roles}
     return {
         "state": "reconsent",
         "message": (
@@ -125,10 +149,18 @@ async def onedrive_diagnostic(tenant_id: str, upn: str) -> list[Step]:
         claims = token_claims(token)
         step.ok, step.detail = True, claims
         step.summary = f"{len(claims.get('roles') or [])} permission(s) applicative(s) accordee(s)"
+        graph_roles = claims.get("roles") or []
+        missing = missing_graph_roles(graph_roles)
+        if missing:
+            step.ok = False
+            step.summary += " ; MANQUANTES : " + ", ".join(missing)
+        if REQUIRED_SHAREPOINT_ROLE in graph_roles:
+            step.ok = False
+            step.summary += " ; " + MISPLACED_HINT
     except oauth.ConsentError as exc:
         step.ok, step.summary = False, str(exc)
     steps.append(step)
-    if not step.ok:
+    if not step.detail:
         return steps
 
     async with GraphClient(tenant_id) as graph:
@@ -189,6 +221,7 @@ async def onedrive_diagnostic(tenant_id: str, upn: str) -> list[Step]:
         # 5. Jeton SharePoint administration ----------------------------------------------
         step = Step("Jeton SharePoint administration (certificat)")
         admin_host = ""
+        sp_token = None
         try:
             hostname = await graph.sharepoint_hostname()
             admin_host = sharepoint.admin_host_for(hostname)
@@ -202,12 +235,18 @@ async def onedrive_diagnostic(tenant_id: str, upn: str) -> list[Step]:
                 "jeton delivre par Entra ID ; roles SharePoint : "
                 + (", ".join(roles) if roles else "AUCUN (permission SharePoint non consentie)")
             )
+            if REQUIRED_SHAREPOINT_ROLE not in roles:
+                step.ok = False
+                step.summary += " ; " + (
+                    MISPLACED_HINT if REQUIRED_SHAREPOINT_ROLE in graph_roles
+                    else f"{REQUIRED_SHAREPOINT_ROLE} (API SharePoint) absente du jeton"
+                )
         except (oauth.ConsentError, GraphError) as exc:
             step.ok, step.summary = False, str(exc)
         steps.append(step)
 
         # 6. Demande de creation du OneDrive -----------------------------------------------
-        if step.ok:
+        if sp_token:
             step = Step("Demande de creation (CreatePersonalSiteEnqueueBulk)")
             try:
                 url, resp = await sharepoint.post_enqueue(graph, [user["userPrincipalName"]])

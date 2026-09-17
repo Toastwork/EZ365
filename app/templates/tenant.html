@@ -32,6 +32,8 @@
     <span>
       {% if sp_access.state == "reconsent" %}
         Ce client n'a pas encore accepte la permission SharePoint d'EZ365.
+      {% elif sp_access.state == "misplaced" %}
+        La permission Sites.FullControl.All est declaree sous Microsoft Graph au lieu de SharePoint.
       {% elif sp_access.state == "certificate" %}
         Le certificat d'EZ365 n'est pas encore depose sur l'application Azure.
       {% else %}
@@ -43,7 +45,7 @@
     {% endif %}
   </div>
   <a class="btn" href="/tenants/{{ tenant.id }}/diagnostic">Diagnostic</a>
-  {% if sp_access.state == "reconsent" %}
+  {% if sp_access.state in ("reconsent", "misplaced") %}
     <a class="btn btn-primary" href="/tenants/{{ tenant.id }}/reconsent">Renouveler le consentement</a>
   {% elif sp_access.state == "certificate" %}
     <a class="btn" href="/settings/certificate">Voir le certificat</a>

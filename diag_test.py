@@ -35,13 +35,14 @@ def fake_token(claims):
 
 
 GRAPH_TOKEN = fake_token({"aud": "https://graph.microsoft.com", "appid": "APP",
-                          "roles": ["User.ReadWrite.All", "Sites.ReadWrite.All"]})
+                          "roles": ["User.ReadWrite.All", "Sites.ReadWrite.All", "Organization.Read.All",
+                                    "Domain.Read.All", "Group.ReadWrite.All"]})
 SP_TOKEN = fake_token({"aud": "https://acme-admin.sharepoint.com", "appid": "APP", "roles": []})
 
 
 # --- revendications d'un jeton ------------------------------------------------------
 claims = diagnostics.token_claims(GRAPH_TOKEN)
-check("roles extraits du jeton", claims["roles"] == ["User.ReadWrite.All", "Sites.ReadWrite.All"], claims)
+check("roles extraits du jeton", claims["roles"][:2] == ["User.ReadWrite.All", "Sites.ReadWrite.All"], claims)
 check("jeton illisible signale", diagnostics.token_claims("pas-un-jeton") == {"illisible": True})
 
 
@@ -233,6 +234,35 @@ with TestClient(app) as client:
 from app.msgraph.oauth import _token_roles
 check("roles lus par oauth", _token_roles(fake_token({"roles": ["A"]})) == ["A"])
 check("jeton sans role detecte", _token_roles(fake_token({})) == [] and _token_roles("x") == [])
+
+# permission SharePoint declaree sous Graph ------------------------------------------
+check("roles Graph manquants", diagnostics.missing_graph_roles(
+    ["User.ReadWrite.All", "Organization.Read.All", "Domain.Read.All", "Sites.ReadWrite.All"])
+    == ["Group.Create", "GroupMember.ReadWrite.All"])
+check("Group.ReadWrite.All suffit", diagnostics.missing_graph_roles(
+    ["User.ReadWrite.All", "Organization.Read.All", "Domain.Read.All", "Sites.ReadWrite.All",
+     "Group.ReadWrite.All"]) == [])
+
+
+async def misplaced():
+    diagnostics._hostnames["t1"] = "acme.sharepoint.com"
+
+    async def tok(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
+        if ".sharepoint.com" in scope:
+            return fake_token({"roles": []})
+        return fake_token({"roles": ["Sites.FullControl.All", "User.ReadWrite.All"]})
+    oauth.get_app_token = tok
+    state = await diagnostics.sharepoint_access("t1")
+    check("permission sous Graph detectee", state["state"] == "misplaced", state)
+    steps = await diagnostics.onedrive_diagnostic("t1", "neo@acme.fr")
+    check("diagnostic : manques signales a l'etape 1",
+          steps[0].ok is False and "MANQUANTES" in steps[0].summary and "SharePoint" in steps[0].summary,
+          steps[0].summary)
+    check("diagnostic : etape 5 en echec, etape 6 jouee",
+          steps[4].ok is False and len(steps) == 6, [s.summary for s in steps])
+    oauth.get_app_token = fake_token_for
+
+asyncio.run(misplaced())
 
 print()
 print("ECHECS :", fails if fails else "aucun")
