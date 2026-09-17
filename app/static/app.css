@@ -10,8 +10,10 @@
   --accent: #0f6cbd;
   --accent-dark: #115ea3;
   --accent-soft: #ebf3fc;
-  --header-bg: #1b1a19;
-  --header-fg: #ffffff;
+  --header-bg: #ffffff;
+  --header-fg: #242424;
+  --header-hover: rgba(0,0,0,.06);
+  --header-line: #e0e0e0;
   --ok-bg: #f1faf1; --ok-fg: #0e700e;
   --warn-bg: #fff9f5; --warn-fg: #bc4b09;
   --ko-bg: #fdf3f4; --ko-fg: #b10e1c;
@@ -23,26 +25,28 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1f1f1f;
-    --surface: #292929;
-    --subtle: #333333;
-    --border: #3d3d3d;
-    --border-strong: #525252;
-    --text: #ffffff;
-    --muted: #adadad;
-    --accent: #479ef5;
-    --accent-dark: #62abf5;
-    --accent-soft: #0e2a47;
-    --header-bg: #0a0a0a;
-    --ok-bg: #052505; --ok-fg: #54b054;
-    --warn-bg: #411200; --warn-fg: #faa06b;
-    --ko-bg: #3b0509; --ko-fg: #dc626d;
-    --shadow: 0 0 2px rgba(0,0,0,.24), 0 2px 4px rgba(0,0,0,.28);
-    --shadow-lg: 0 0 2px rgba(0,0,0,.24), 0 8px 16px rgba(0,0,0,.28);
-    color-scheme: dark;
-  }
+/* Clair par defaut ; sombre sur demande (bouton du bandeau, memorise). */
+:root[data-theme="dark"] {
+  --bg: #1f1f1f;
+  --surface: #292929;
+  --subtle: #333333;
+  --border: #3d3d3d;
+  --border-strong: #525252;
+  --text: #ffffff;
+  --muted: #adadad;
+  --accent: #479ef5;
+  --accent-dark: #62abf5;
+  --accent-soft: #0e2a47;
+  --header-bg: #0a0a0a;
+  --header-fg: #ffffff;
+  --header-hover: rgba(255,255,255,.1);
+  --header-line: #0a0a0a;
+  --ok-bg: #052505; --ok-fg: #54b054;
+  --warn-bg: #411200; --warn-fg: #faa06b;
+  --ko-bg: #3b0509; --ko-fg: #dc626d;
+  --shadow: 0 0 2px rgba(0,0,0,.24), 0 2px 4px rgba(0,0,0,.28);
+  --shadow-lg: 0 0 2px rgba(0,0,0,.24), 0 8px 16px rgba(0,0,0,.28);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -75,19 +79,24 @@ code, .mono { font-family: "Cascadia Mono", Consolas, ui-monospace, monospace; f
   display: flex; align-items: center; gap: 4px;
   height: 48px; padding: 0 12px 0 0;
   background: var(--header-bg); color: var(--header-fg);
+  border-bottom: 1px solid var(--header-line);
 }
 .no-nav .suite-header { padding-left: 16px; }
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 48px; height: 48px; border: 0; background: transparent; color: inherit; cursor: pointer;
 }
-.icon-btn:hover { background: rgba(255,255,255,.1); }
+.icon-btn:hover { background: var(--header-hover); }
+.theme-toggle .sun, :root[data-theme="dark"] .theme-toggle .moon { display: none; }
+:root[data-theme="dark"] .theme-toggle .sun { display: block; }
 .icon-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--header-fg); padding: 0 8px; height: 48px; }
 .brand:hover { text-decoration: none; color: var(--header-fg); }
 .brand-mark { width: 18px; height: 18px; fill: var(--header-fg); opacity: .95; }
 .brand-name { font-size: 16px; font-weight: 600; }
-.brand-sub { font-size: 16px; font-weight: 400; padding-left: 10px; border-left: 1px solid rgba(255,255,255,.35); }
+.brand-mark { fill: var(--accent); }
+:root[data-theme="dark"] .brand-mark { fill: var(--header-fg); }
+.brand-sub { font-size: 16px; font-weight: 400; padding-left: 10px; border-left: 1px solid var(--border-strong); }
 .who { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; }
 .avatar {
   display: inline-flex; align-items: center; justify-content: center;
@@ -489,3 +498,12 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
 @media (max-width: 640px) {
   .user-row { grid-template-columns: 1fr; }
 }
+
+/* ---------- recherche du tableau de bord ---------- */
+.search-box { position: relative; max-width: 420px; margin-bottom: 16px; }
+.search-box svg { position: absolute; left: 10px; top: 8px; width: 16px; height: 16px;
+  fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
+.search-box input { padding-left: 34px; }
+.search-empty { padding: 16px; }
+.theme-toggle { margin-left: auto; }
+.theme-toggle + .who { margin-left: 0; }

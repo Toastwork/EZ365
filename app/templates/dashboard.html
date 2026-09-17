@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Tenants — {{ app_name }}{% endblock %}
+{% block title %}Tableau de bord — {{ app_name }}{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
-    <h1>Tenants connectes</h1>
-    <p class="muted">Chaque tenant a accorde le consentement administrateur a l'application EZ365.</p>
+    <h1>Tableau de bord</h1>
+    <p class="muted">Tenants connectes : chacun a accorde le consentement administrateur a l'application EZ365.</p>
   </div>
   <a class="btn btn-primary" href="/tenants/connect">Connecter un tenant</a>
 </div>
@@ -16,7 +16,13 @@
 </div>
 
 {% if tenants %}
-<table class="table">
+<div class="search-box">
+  <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="m10 10 4 4"/></svg>
+  <input id="dashboard-search" type="search" autocomplete="off" autofocus
+         placeholder="Rechercher un client, un domaine ou un ID de tenant"
+         value="{{ request.query_params.get('q', '') }}" oninput="filterDashboard(this.value)">
+</div>
+<table class="table" id="tenant-table">
   <thead>
     <tr>
       <th>Client</th>
@@ -28,7 +34,7 @@
   </thead>
   <tbody>
   {% for t in tenants %}
-    <tr>
+    <tr data-search="{{ [t.display_name, t.default_domain, t.id] | join(' ') | lower }}">
       <td>
         <a class="strong" href="/tenants/{{ t.id }}">{{ t.display_name or t.id }}</a>
         <div class="muted mono small">{{ t.id }}</div>
@@ -43,6 +49,7 @@
   {% endfor %}
   </tbody>
 </table>
+<p id="search-empty" class="card muted search-empty hidden">Aucun client ne correspond a la recherche.</p>
 {% else %}
 <div class="empty card">
   <h2>Aucun tenant pour l'instant</h2>
@@ -62,7 +69,7 @@
   </thead>
   <tbody>
   {% for j in jobs %}
-    <tr>
+    <tr data-search="{{ [j.tenant_name, j.tenant_id, j.kind, j.created_by] | join(' ') | lower }}">
       <td>{{ j.tenant_name or j.tenant_id }}</td>
       <td>{{ j.kind }}</td>
       <td><span class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(j.status,'warn') }}">{{ j.status }}</span></td>
@@ -74,4 +81,31 @@
   </tbody>
 </table>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Filtre instantane : clients et derniers traitements.
+  function filterDashboard(term) {
+    const words = (term || "").toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    document.querySelectorAll("tr[data-search]").forEach(function (row) {
+      const hay = row.dataset.search;
+      const match = words.every(function (w) { return hay.indexOf(w) !== -1; });
+      row.classList.toggle("hidden", !match);
+      if (match && row.closest("#tenant-table")) { shown += 1; }
+    });
+    const empty = document.getElementById("search-empty");
+    if (empty) { empty.classList.toggle("hidden", shown > 0); }
+    try {
+      const url = new URL(window.location.href);
+      if (term) { url.searchParams.set("q", term); } else { url.searchParams.delete("q"); }
+      history.replaceState(null, "", url);
+    } catch (e) {}
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    const box = document.getElementById("dashboard-search");
+    if (box && box.value) { filterDashboard(box.value); }
+  });
+</script>
 {% endblock %}

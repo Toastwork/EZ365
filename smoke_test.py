@@ -44,7 +44,7 @@ with TestClient(app) as client:
     check("connexion acceptee", r.status_code == 303)
 
     r = client.get("/")
-    check("tableau de bord accessible", r.status_code == 200 and "Tenants connectes" in r.text)
+    check("tableau de bord accessible", r.status_code == 200 and "Tableau de bord" in r.text and "dashboard-search" in r.text)
 
     r = client.get("/tenants/connect", follow_redirects=False)
     loc = r.headers.get("location", "")
