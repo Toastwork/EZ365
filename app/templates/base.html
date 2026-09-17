@@ -6,34 +6,94 @@
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#9729;</text></svg>">
+  <script>
+    // Avant le rendu : evite que la navigation repliee « saute » au chargement.
+    try { if (localStorage.getItem("ez365-nav") === "collapsed") { document.documentElement.classList.add("nav-collapsed"); } } catch (e) {}
+  </script>
 </head>
-<body>
-<header class="topbar">
-  <a class="brand" href="/">EZ<span>365</span></a>
+{% set path = request.url.path if request else "" %}
+<body class="{{ 'with-nav' if operator else 'no-nav' }}">
+<header class="suite-header">
   {% if operator %}
-  <nav>
-    <a href="/">Tenants</a>
-    <a href="/tenants/connect">Connecter un tenant</a>
-    <a href="/settings/certificate">Certificat SharePoint</a>
-  </nav>
+  <button class="icon-btn nav-toggle" type="button" aria-label="Afficher ou masquer la navigation"
+          onclick="toggleNav()">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+  </button>
+  {% endif %}
+  <a class="brand" href="/">
+    <svg class="brand-mark" viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/>
+      <rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/>
+    </svg>
+    <span class="brand-name">EZ365</span>
+    <span class="brand-sub">Centre d'administration</span>
+  </a>
+  {% if operator %}
   <div class="who">
-    <span title="{{ operator.username }}">{{ operator.display_name }}</span>
-    <a class="link-quiet" href="/logout">Deconnexion</a>
+    <span class="avatar" title="{{ operator.username }}">{{ (operator.display_name or operator.username)[:2] | upper }}</span>
+    <span class="who-name">{{ operator.display_name }}</span>
+    <a class="who-out" href="/logout">Deconnexion</a>
   </div>
   {% endif %}
 </header>
 
-<main class="page">
-  {% if flash %}
-    <div class="flash flash-{{ flash.level }}">{{ flash.message }}</div>
+<div class="shell">
+  {% if operator %}
+  <nav class="sidenav" aria-label="Navigation principale">
+    <a href="/" class="{{ 'active' if path == '/' }}" title="Tenants">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9.5 10 3l7 6.5V17h-4.5v-4.5h-5V17H3z"/></svg>
+      <span>Tenants</span>
+    </a>
+    {% if tenant is defined and tenant and tenant.id %}
+    <a href="/tenants/{{ tenant.id }}" class="sub {{ 'active' if path.startswith('/tenants/' ~ tenant.id) }}"
+       title="{{ tenant.display_name or tenant.id }}">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="1.5"/><path d="M7 7h6M7 10h6M7 13h3"/></svg>
+      <span>{{ tenant.display_name or tenant.id }}</span>
+    </a>
+    {% endif %}
+    <a href="/tenants/connect" class="{{ 'active' if path == '/tenants/connect' }}" title="Connecter un tenant">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 6.5v7M6.5 10h7"/></svg>
+      <span>Connecter un tenant</span>
+    </a>
+    <a href="/settings/certificate" class="{{ 'active' if path.startswith('/settings/certificate') }}" title="Certificat SharePoint">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="10" rx="1.5"/><circle cx="13" cy="13.5" r="2.5"/><path d="M12 15.5 11.5 18l1.5-.8 1.5.8-.5-2.5M6 7.5h6M6 10h3"/></svg>
+      <span>Certificat SharePoint</span>
+    </a>
+    <div class="sidenav-foot">
+      <span class="build" title="version">{{ build_ref }}</span>
+    </div>
+  </nav>
   {% endif %}
-  {% block content %}{% endblock %}
-</main>
 
-<footer class="footer">
-  <span>{{ app_name }} — provisionnement Microsoft 365</span>
-  <span class="build">version {{ build_ref }}</span>
-</footer>
+  <main class="page">
+    {% if operator and tenant is defined and tenant and tenant.id and path != '/tenants/' ~ tenant.id %}
+    <div class="breadcrumb">
+      <a href="/">Tenants</a><span>›</span>
+      <a href="/tenants/{{ tenant.id }}">{{ tenant.display_name or tenant.id }}</a>
+    </div>
+    {% endif %}
+    {% if flash %}
+      <div class="flash flash-{{ flash.level }}">{{ flash.message }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+    <footer class="footer">
+      <span>{{ app_name }} — provisionnement Microsoft 365</span>
+      <span class="build">version {{ build_ref }}</span>
+    </footer>
+  </main>
+</div>
+
+<script>
+  function toggleNav() {
+    const root = document.documentElement;
+    if (window.matchMedia("(max-width: 760px)").matches) {
+      root.classList.toggle("nav-open");
+      return;
+    }
+    const collapsed = root.classList.toggle("nav-collapsed");
+    try { localStorage.setItem("ez365-nav", collapsed ? "collapsed" : "open"); } catch (e) {}
+  }
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
