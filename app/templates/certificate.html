@@ -94,6 +94,9 @@
     « Toutes les applications » (et non « Applications detenues »), verifiez le
     repertoire actif en haut a droite, puis cherchez l'ID client
     <code>{{ portal.Overview.rsplit('/', 1)[-1] }}</code>.
+    Si elle n'apparait que dans « Applications d'entreprise », l'inscription
+    appartient a un autre tenant : creez la votre (multilocataire) puis
+    remplacez <code>MS_CLIENT_ID</code> et <code>MS_CLIENT_SECRET</code> dans la stack.
   </p>
   {% endif %}
   <ol class="steps">
@@ -109,6 +112,25 @@
       Meme application → <em>Autorisations de l'API</em> → <em>Ajouter une
       autorisation</em> → <em>SharePoint</em> → <em>Autorisations de
       l'application</em> → <code>Sites.FullControl.All</code>.
+    </li>
+    <li>
+      <strong>Verifier les permissions Graph.</strong>
+      Meme ecran → <em>Microsoft Graph</em> → <em>Autorisations de l'application</em> :
+      <table class="perm-table">
+        <thead><tr><th>Permission</th><th>Pour</th></tr></thead>
+        <tbody>
+          <tr><td><code>User.ReadWrite.All</code></td><td>creer les comptes, attribuer les licences</td></tr>
+          <tr><td><code>Organization.Read.All</code></td><td>licences disponibles (lecture seule)</td></tr>
+          <tr><td><code>Domain.Read.All</code></td><td>domaines du client (lecture seule)</td></tr>
+          <tr><td><code>Group.Create</code></td><td>creer le groupe d'un site d'equipe</td></tr>
+          <tr><td><code>GroupMember.ReadWrite.All</code></td><td>ajouter les utilisateurs aux sites</td></tr>
+          <tr><td><code>Sites.ReadWrite.All</code></td><td>dossiers, OneDrive et raccourcis</td></tr>
+        </tbody>
+      </table>
+      <span class="muted small">
+        <code>Group.ReadWrite.All</code> et <code>Files.ReadWrite.All</code> ne sont pas
+        necessaires ; ajoutez la seconde seulement si un raccourci echoue en 403.
+      </span>
     </li>
     <li>
       <strong>Faire accepter la permission par les clients deja connectes.</strong>

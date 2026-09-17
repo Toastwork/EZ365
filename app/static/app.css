@@ -357,6 +357,8 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
 .consent-actions.row { flex-direction: row; flex-wrap: wrap; align-items: center; }
 .steps { padding-left: 1.2rem; }
 .steps li { margin-bottom: .8rem; line-height: 1.55; }
+.perm-table { margin: .4rem 0; border-collapse: collapse; font-size: .9em; }
+.perm-table th, .perm-table td { padding: .2rem .6rem; text-align: left; border-bottom: 1px solid var(--border); }
 
 .sp-access { justify-content: space-between; flex-wrap: wrap; }
 .sp-access > div { display: flex; flex-direction: column; gap: .15rem; }

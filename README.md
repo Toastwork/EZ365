@@ -35,19 +35,61 @@ utilisateur et sans conserver les identifiants du client.
 
 ---
 
-## Permissions Graph a declarer sur l'application Azure
+## Application Azure et permissions
+
+### Creer l'inscription
+
+L'inscription doit se trouver dans **votre** tenant : si EZ365 n'apparait
+que dans *Applications d'entreprise* (et pas dans *Inscriptions
+d'applications*), elle appartient a un autre editeur et vous ne pourrez pas y
+deposer le certificat. Dans ce cas, creez la votre :
+
+1. *Microsoft Entra ID* → *Inscriptions d'applications* → *Nouvelle
+   inscription* ; types de comptes : **« Comptes dans un annuaire
+   d'organisation (tout locataire) »** ; URI de redirection **Web** = la valeur
+   exacte de `MS_REDIRECT_URI` ;
+2. *Certificats & secrets* : un secret client (duree courte, 6 mois conseilles)
+   et le certificat `.cer` d'EZ365 (voir plus bas) ;
+3. *Autorisations de l'API* : les permissions ci-dessous ;
+4. dans la stack, remplacer `MS_CLIENT_ID` et `MS_CLIENT_SECRET` ;
+5. faire accepter la nouvelle application par chaque client deja connecte
+   (bouton « Renouveler » de la page « Certificat SharePoint »).
+
+### Permissions a declarer
 
 Toutes en **permissions d'application** (pas deleguees), avec consentement
-administrateur :
+administrateur. La liste est volontairement resserree :
 
-| Permission | Necessaire pour |
-|---|---|
-| `User.ReadWrite.All` | creer les comptes, definir `usageLocation` |
-| `Organization.Read.All` | lire `subscribedSkus` et attribuer les licences |
-| `Domain.Read.All` | detecter le domaine par defaut du tenant |
-| `Group.ReadWrite.All` | creer le site d'equipe (groupe Microsoft 365) et ses membres |
-| `Sites.ReadWrite.All` | lire les sites et bibliotheques |
-| `Files.ReadWrite.All` | provisionner les OneDrive et y creer les raccourcis |
+| API | Permission | Necessaire pour |
+|---|---|---|
+| Graph | `User.ReadWrite.All` | creer les comptes, `usageLocation`, attribuer les licences |
+| Graph | `Organization.Read.All` | nom du client et licences disponibles (`subscribedSkus`) — lecture seule |
+| Graph | `Domain.Read.All` | domaines proposes pour les comptes — lecture seule |
+| Graph | `Group.Create` | creer le groupe Microsoft 365 d'un site d'equipe |
+| Graph | `GroupMember.ReadWrite.All` | ajouter membres et proprietaires aux groupes des sites |
+| Graph | `Sites.ReadWrite.All` | sites, bibliotheques, dossiers, OneDrive et raccourcis |
+| SharePoint | `Sites.FullControl.All` | initialiser les OneDrive, creer les sites de communication |
+
+Pourquoi pas moins :
+
+- `Group.Create` + `GroupMember.ReadWrite.All` remplacent `Group.ReadWrite.All` :
+  EZ365 cree des groupes et gere leurs membres, mais ne peut ni modifier ni
+  supprimer les groupes existants du client ;
+- `Files.ReadWrite.All` n'est pas demandee : `Sites.ReadWrite.All` couvre deja
+  les OneDrive. Si le diagnostic OneDrive ou un raccourci renvoie un 403,
+  l'ajouter ;
+- `Sites.Selected` imposerait d'autoriser chaque site un par un, ce qui va a
+  l'encontre du but de l'outil ;
+- `Sites.FullControl.All` n'a pas d'equivalent plus fin :
+  `CreatePersonalSiteEnqueueBulk` et `SPSiteManager` sont des API
+  d'administration du tenant. C'est la permission la plus sensible, et c'est
+  elle que protege le certificat : SharePoint refuse les jetons obtenus avec le
+  secret, donc un secret derobe ne donne acces qu'aux droits Graph.
+
+Hygiene conseillee : secret a duree courte conserve uniquement dans la stack,
+volume `/data` et `STORAGE_KEY` proteges (ils donnent acces au certificat),
+application d'entreprise supprimee chez un client qui part, et *Journaux de
+connexion* de l'application d'entreprise pour suivre son utilisation.
 
 ### Certificat SharePoint (creation des OneDrive)
 
