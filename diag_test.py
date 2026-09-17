@@ -229,6 +229,11 @@ with TestClient(app) as client:
     oauth.invalidate = real_invalidate
     check("jetons oublies apres consentement", "t1" in invalidated, invalidated)
 
+# jeton sans permission : pas garde une heure en cache ----------------------------
+from app.msgraph.oauth import _token_roles
+check("roles lus par oauth", _token_roles(fake_token({"roles": ["A"]})) == ["A"])
+check("jeton sans role detecte", _token_roles(fake_token({})) == [] and _token_roles("x") == [])
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)

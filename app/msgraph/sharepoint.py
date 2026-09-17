@@ -334,15 +334,21 @@ async def post_enqueue(graph: GraphClient, emails: list[str]) -> tuple[str, http
     """Un appel CreatePersonalSiteEnqueueBulk ; renvoie (url, reponse brute)."""
     hostname = await graph.sharepoint_hostname()
     admin_host = admin_host_for(hostname)
-    token = await oauth.get_app_token(graph.tenant_id, scope=f"https://{admin_host}/.default")
+    scope = f"https://{admin_host}/.default"
     url = f"https://{admin_host}{ENQUEUE_PATH}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json;odata=nometadata",
-        "Content-Type": "application/json;odata=nometadata",
-    }
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(url, json={"emailIDs": emails}, headers=headers)
+        for attempt in range(2):
+            token = await oauth.get_app_token(
+                graph.tenant_id, scope=scope, force_refresh=attempt > 0
+            )
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json;odata=nometadata",
+                "Content-Type": "application/json;odata=nometadata",
+            }
+            resp = await client.post(url, json={"emailIDs": emails}, headers=headers)
+            if resp.status_code not in (401, 403):
+                break
     return url, resp
 
 

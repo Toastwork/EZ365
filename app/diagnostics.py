@@ -84,13 +84,26 @@ async def sharepoint_access(tenant_id: str) -> dict:
         return {"state": "error", "message": str(exc)}
 
     roles = token_claims(token).get("roles") or []
+    if REQUIRED_SHAREPOINT_ROLE not in roles:
+        # jeton en cache anterieur au consentement : en redemander un
+        try:
+            token = await oauth.get_app_token(
+                tenant_id, scope=f"https://{sharepoint.admin_host_for(hostname)}/.default",
+                force_refresh=True,
+            )
+            roles = token_claims(token).get("roles") or []
+        except oauth.ConsentError:
+            pass
     if REQUIRED_SHAREPOINT_ROLE in roles:
         return {"state": "ok", "message": "Acces SharePoint operationnel.", "roles": roles}
     return {
         "state": "reconsent",
         "message": (
-            f"La permission {REQUIRED_SHAREPOINT_ROLE} n'est pas encore acceptee "
-            "par ce client."
+            f"Le jeton SharePoint ne contient pas {REQUIRED_SHAREPOINT_ROLE} "
+            f"(permissions recues : {', '.join(roles) or 'aucune'}). "
+            "Soit la permission n'est pas declaree sur l'application Azure, soit ce "
+            "client ne l'a pas encore acceptee, soit le consentement se propage "
+            "encore (quelques minutes)."
         ),
         "roles": roles,
     }

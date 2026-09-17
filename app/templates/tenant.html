@@ -38,7 +38,11 @@
         {{ sp_access.message }}
       {% endif %}
     </span>
+    {% if sp_access.state != "error" and sp_access.message %}
+      <details class="small"><summary>detail</summary>{{ sp_access.message }}</details>
+    {% endif %}
   </div>
+  <a class="btn" href="/tenants/{{ tenant.id }}/diagnostic">Diagnostic</a>
   {% if sp_access.state == "reconsent" %}
     <a class="btn btn-primary" href="/tenants/{{ tenant.id }}/reconsent">Renouveler le consentement</a>
   {% elif sp_access.state == "certificate" %}

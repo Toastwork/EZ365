@@ -7,6 +7,8 @@ session utilisateur. C'est ce qui permet de provisionner en tache de fond.
 """
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import secrets
 import threading
@@ -22,6 +24,7 @@ log = logging.getLogger(__name__)
 
 LOGIN_HOST = "https://login.microsoftonline.com"
 GRAPH_SCOPE = "https://graph.microsoft.com/.default"
+UNGRANTED_TOKEN_TTL = 60  # secondes
 
 _token_cache: dict[tuple[str, str], tuple[str, float]] = {}
 _cache_lock = threading.Lock()
@@ -138,9 +141,22 @@ async def get_app_token(
     payload = resp.json()
     token = payload["access_token"]
     expires_at = time.time() + int(payload.get("expires_in", 3600))
+    if not _token_roles(token):
+        # Juste apres un consentement, Entra peut encore delivrer un jeton sans
+        # permission pendant quelques minutes : ne pas le garder une heure.
+        expires_at = min(expires_at, time.time() + UNGRANTED_TOKEN_TTL)
     with _cache_lock:
         _token_cache[key] = (token, expires_at)
     return token
+
+
+def _token_roles(token: str) -> list:
+    try:
+        body = token.split(".")[1]
+        body += "=" * (-len(body) % 4)
+        return json.loads(base64.urlsafe_b64decode(body)).get("roles") or []
+    except Exception:
+        return []
 
 
 def invalidate_all() -> None:
