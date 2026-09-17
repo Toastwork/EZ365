@@ -8,13 +8,8 @@
     <p class="muted mono small">{{ tenant.id }} · {{ tenant.default_domain or 'domaine inconnu' }}</p>
   </div>
   <div class="head-actions">
-    <a class="btn" href="/tenants/{{ tenant.id }}/diagnostic">Diagnostic OneDrive</a>
     <form method="post" action="/tenants/{{ tenant.id }}/refresh">
       <button class="btn" type="submit">Verifier la connexion</button>
-    </form>
-    <form method="post" action="/tenants/{{ tenant.id }}/forget"
-          onsubmit="return confirm('Retirer ce tenant d\'EZ365 ? Le consentement Microsoft reste actif.');">
-      <button class="btn btn-danger" type="submit">Retirer</button>
     </form>
   </div>
 </div>
@@ -54,7 +49,132 @@
 {% endif %}
 
 <!-- ------------------------------------------------------------------ -->
-<details class="card" {% if not tenant.vault_collection_id %}open{% endif %}>
+<form method="post" action="/tenants/{{ tenant.id }}/deploy" class="card deploy" id="deploy"
+      data-tenant="{{ tenant.id }}" onsubmit="return confirmDeploy(this);">
+  <h2>Deployer des raccourcis SharePoint</h2>
+  <input type="hidden" name="site_name" value="">
+  <input type="hidden" name="mass_folders" value="[]">
+
+  <!-- 1. site ----------------------------------------------------------- -->
+  <section class="deploy-step">
+    <h3><span class="step-num">1</span> Site</h3>
+    {% if sites|length > 8 %}
+      <input class="list-filter" type="search" placeholder="Filtrer les sites…"
+             oninput="filterList('#site-list .site-item', this.value)">
+    {% endif %}
+    <div id="site-list" class="site-list">
+      {% for s in sites %}
+        <label class="site-item">
+          <input type="radio" name="site_id" value="{{ s.id }}"
+                 data-name="{{ s.displayName or s.name }}" onchange="pickSite(this)">
+          <span class="site-name">{{ s.displayName or s.name }}
+            {% if s.pending_index %}<span class="pill pill-warn">ajoute via EZ365</span>{% endif %}
+          </span>
+          <span class="site-url muted small">{{ s.webUrl }}</span>
+        </label>
+      {% else %}
+        <p class="muted">Aucun site lisible sur ce tenant.</p>
+      {% endfor %}
+    </div>
+    <details class="mt">
+      <summary class="muted small">Site absent de la liste ?</summary>
+      <div class="folder-add-row mt">
+        <input id="deploy-site-url" placeholder="https://client.sharepoint.com/sites/NomDuSite"
+               onkeydown="if (event.key === 'Enter') { event.preventDefault(); findSiteByUrl(); }">
+        <button type="button" class="btn" onclick="findSiteByUrl()">Retrouver</button>
+      </div>
+      <p id="deploy-site-status" class="muted small">
+        Un site tout juste cree peut mettre quelques minutes a apparaitre.
+      </p>
+    </details>
+  </section>
+
+  <!-- 2. pour tous ------------------------------------------------------- -->
+  <section class="deploy-step" id="mass-step">
+    <h3><span class="step-num">2</span> Pour tous les utilisateurs
+      <span class="step-info" id="mass-info"></span>
+    </h3>
+    <p id="folder-state" class="muted small">Choisissez un site pour afficher ses dossiers.</p>
+    <div id="mass-folders" class="folder-tree"></div>
+
+    <details class="mt" id="exclude-block">
+      <summary class="muted small">Exclure des comptes <span id="exclude-info"></span></summary>
+      <input class="list-filter mt" type="search" placeholder="Filtrer…"
+             oninput="filterList('#exclude-list label', this.value)">
+      <div id="exclude-list" class="check-list"></div>
+    </details>
+  </section>
+
+  <!-- 3. par utilisateur ------------------------------------------------- -->
+  <section class="deploy-step">
+    <details id="per-user-block">
+      <summary>
+        <h3 class="inline"><span class="step-num">3</span> Par utilisateur
+          <span class="muted small">— en plus, au cas par cas</span>
+          <span class="step-info" id="per-user-info"></span>
+        </h3>
+      </summary>
+      <input class="list-filter mt" type="search" placeholder="Filtrer les utilisateurs…"
+             oninput="filterList('#user-rows .user-row', this.value)">
+      <p id="users-state" class="muted small">Chargement des utilisateurs…</p>
+      <div id="user-rows" class="user-rows"></div>
+    </details>
+  </section>
+
+  <div class="actions deploy-actions">
+    <details class="deploy-options">
+      <summary class="muted small">Options</summary>
+      <label for="deploy_onedrive_wait">Attente maximale d'un OneDrive a creer</label>
+      <select id="deploy_onedrive_wait" name="onedrive_wait">
+        <option value="0">Ne pas attendre</option>
+        <option value="60">1 minute</option>
+        <option value="120" selected>2 minutes</option>
+        <option value="300">5 minutes</option>
+        <option value="600">10 minutes</option>
+      </select>
+      <p class="muted small">
+        Les OneDrive manquants sont crees automatiquement. Passe ce delai, le
+        compte est ignore : relancez le deploiement plus tard, les raccourcis
+        deja poses sont reconnus.
+      </p>
+    </details>
+    <button class="btn btn-primary btn-lg" type="submit">Deployer</button>
+  </div>
+</form>
+
+{% if jobs %}
+<details class="card history">
+  <summary><strong>Traitements de ce client</strong>
+    <span class="muted small">— {{ jobs|length }} recent(s)</span>
+  </summary>
+  <table class="table mt">
+    <thead><tr><th>Etat</th><th>Lance</th><th>Par</th><th></th></tr></thead>
+    <tbody>
+    {% for j in jobs %}
+      <tr>
+        <td><span class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(j.status,'warn') }}">{{ j.status }}</span></td>
+        <td class="muted small">{{ j.created_at | dt }}</td>
+        <td class="muted small">{{ j.created_by }}</td>
+        <td class="right"><a class="btn btn-small" href="/jobs/{{ j.id }}">Journal</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+
+<details class="more-actions">
+  <summary>Autres actions <span class="muted small">— creer un site ou des comptes, coffre Bitwarden, diagnostic</span></summary>
+
+<div class="more-buttons">
+  <a class="btn" href="/tenants/{{ tenant.id }}/diagnostic">Diagnostic OneDrive</a>
+  <form method="post" action="/tenants/{{ tenant.id }}/forget"
+        onsubmit="return confirm('Retirer ce tenant d\'EZ365 ? Le consentement Microsoft reste actif.');">
+    <button class="btn btn-danger" type="submit">Retirer ce client d'EZ365</button>
+  </form>
+</div>
+
+<details class="card">
   <summary><strong>Destination Bitwarden</strong>
     <span class="muted small">— ou deposer les identifiants crees pour ce client</span>
   </summary>
@@ -90,7 +210,7 @@
 <!-- ------------------------------------------------------------------ -->
 <form method="post" action="/tenants/{{ tenant.id }}/provision" class="card provision"
       data-tenant="{{ tenant.id }}" onsubmit="return confirmProvision(this);">
-  <h2>Provisionner</h2>
+  <h2>Creer un site ou des comptes</h2>
 
   <!-- ============ SharePoint ============ -->
   <details class="step-section" open>
@@ -356,24 +476,10 @@
   </div>
 </form>
 
-{% if jobs %}
-<h2 class="section">Traitements de ce client</h2>
-<table class="table">
-  <thead><tr><th>Etat</th><th>Lance</th><th>Par</th><th></th></tr></thead>
-  <tbody>
-  {% for j in jobs %}
-    <tr>
-      <td><span class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(j.status,'warn') }}">{{ j.status }}</span></td>
-      <td class="muted small">{{ j.created_at | dt }}</td>
-      <td class="muted small">{{ j.created_by }}</td>
-      <td class="right"><a class="btn btn-small" href="/jobs/{{ j.id }}">Journal</a></td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% endif %}
+</details>
 {% endblock %}
 
 {% block scripts %}
 <script src="/static/app.js?v={{ asset_v }}"></script>
+<script src="/static/deploy.js?v={{ asset_v }}"></script>
 {% endblock %}

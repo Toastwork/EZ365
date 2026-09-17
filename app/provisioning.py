@@ -794,6 +794,99 @@ async def run_site_creation(ctx: JobContext, tenant: dict, site_spec: dict) -> d
     return {"site": site, "users": [], "created": 0, "total": 0, "has_errors": False}
 
 
+DEPLOY_MAX_USERS = 1000
+
+
+def is_deployable(user: dict) -> bool:
+    """Compte qui peut recevoir un raccourci : actif, interne, avec licence.
+
+    Les boites partagees et salles n'ont pas de licence, les invites pas de
+    OneDrive chez le client : ils sont ecartes du deploiement de masse.
+    """
+    upn = (user.get("userPrincipalName") or "").lower()
+    return (
+        bool(upn)
+        and user.get("accountEnabled", True) is not False
+        and (user.get("userType") or "Member") != "Guest"
+        and "#ext#" not in upn
+        and bool(user.get("assignedLicenses"))
+    )
+
+
+def merge_deployment(
+    everyone: list[dict], mass_folders: list[str], excluded: set[str],
+    per_user: list[dict],
+) -> list[dict]:
+    """Liste finale : dossiers communs pour tous, plus les ajouts individuels.
+
+    Un ajout individuel sur un compte exclu du lot commun reste applique :
+    c'est un choix explicite de l'operateur.
+    """
+    plan: dict[str, dict] = {}
+
+    def add(upn: str, name: str, folders: list[str]) -> None:
+        key = upn.lower()
+        entry = plan.setdefault(key, {"upn": key, "display_name": name, "folders": []})
+        for folder in folders:
+            if folder not in entry["folders"]:
+                entry["folders"].append(folder)
+
+    if mass_folders:
+        for user in everyone:
+            upn = (user.get("userPrincipalName") or "").lower()
+            if is_deployable(user) and upn not in excluded:
+                add(upn, user.get("displayName") or upn, mass_folders)
+    for row in per_user:
+        if row.get("folders"):
+            add(row["upn"], row.get("display_name") or row["upn"], row["folders"])
+    return [
+        normalize_user(
+            {
+                "upn": p["upn"],
+                "display_name": p["display_name"],
+                "shortcut_folders": p["folders"],
+                "provision_onedrive": True,
+                "existing_only": True,
+            },
+            p["upn"].split("@")[-1],
+            "FR",
+        )
+        for p in plan.values()
+    ]
+
+
+async def run_deployment(ctx: JobContext, tenant: dict, spec: dict) -> dict:
+    """Raccourcis vers un site existant : dossiers communs a tous + ajouts individuels."""
+    mass = spec.get("mass_folders") or []
+    everyone: list[dict] = []
+    if mass:
+        async with GraphClient(tenant["id"]) as graph:
+            everyone = await graph.list_users("", limit=DEPLOY_MAX_USERS * 2)
+        kept = sum(1 for u in everyone if is_deployable(u))
+        ctx.info(
+            "demarrage",
+            f"{len(everyone)} compte(s) lu(s) sur le tenant, {kept} eligible(s) "
+            "(actifs, internes, avec licence), "
+            f"{len(spec.get('excluded') or [])} exclu(s) par l'operateur.",
+        )
+    users = merge_deployment(
+        everyone, mass, set(spec.get("excluded") or []), spec.get("per_user") or []
+    )
+    empty = {"site": None, "users": [], "created": 0, "total": 0, "has_errors": False}
+    if not users:
+        ctx.warn("demarrage", "Aucun compte a traiter.")
+        return empty
+    if len(users) > DEPLOY_MAX_USERS:
+        ctx.error("demarrage", f"{len(users)} comptes : limite de {DEPLOY_MAX_USERS} depassee.")
+        return {**empty, "has_errors": True}
+    return await run_provisioning(ctx, tenant, {
+        "site": spec["site"],
+        "users": users,
+        "onedrive_wait": spec.get("onedrive_wait", ONEDRIVE_WAIT_DEFAULT),
+        "vault": {"enabled": False},
+    })
+
+
 async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
     site_spec = spec.get("site") or {"mode": "none"}
     user_specs = spec.get("users") or []

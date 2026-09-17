@@ -205,7 +205,7 @@ class GraphClient:
             # une seule requete suffit pour toute la liste.
             "$select": (
                 "id,displayName,userPrincipalName,mail,accountEnabled,"
-                "usageLocation,jobTitle,department,assignedLicenses"
+                "usageLocation,jobTitle,department,assignedLicenses,userType"
             ),
             "$top": "100",
             "$orderby": "displayName",

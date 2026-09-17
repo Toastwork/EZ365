@@ -312,13 +312,7 @@ async def start_provisioning(
         ).strip(),
     }
 
-    # Attente maximale du OneDrive, bornee : une valeur fantaisiste retombe sur
-    # le defaut plutot que de bloquer le traitement.
-    try:
-        onedrive_wait = int(form.get("onedrive_wait", provisioning.ONEDRIVE_WAIT_DEFAULT))
-    except (TypeError, ValueError):
-        onedrive_wait = provisioning.ONEDRIVE_WAIT_DEFAULT
-    onedrive_wait = max(0, min(onedrive_wait, provisioning.ONEDRIVE_WAIT_MAX))
+    onedrive_wait = read_onedrive_wait(form)
 
     spec = {
         "site": site_spec,
@@ -342,6 +336,76 @@ async def start_provisioning(
 
     async def runner(ctx: jobs.JobContext) -> dict:
         return await provisioning.run_provisioning(ctx, tenant, spec)
+
+    jobs.launch(job_id, tenant_id, operator.username, runner)
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
+def read_onedrive_wait(form) -> int:
+    """Attente maximale du OneDrive, bornee : une valeur fantaisiste retombe
+    sur le defaut plutot que de bloquer le traitement."""
+    try:
+        value = int(form.get("onedrive_wait", provisioning.ONEDRIVE_WAIT_DEFAULT))
+    except (TypeError, ValueError):
+        value = provisioning.ONEDRIVE_WAIT_DEFAULT
+    return max(0, min(value, provisioning.ONEDRIVE_WAIT_MAX))
+
+
+@router.post("/tenants/{tenant_id}/deploy")
+async def start_deployment(
+    request: Request,
+    tenant_id: str,
+    operator: Operator = Depends(current_operator),
+):
+    """Raccourcis vers un site existant : pour tous, puis au cas par cas."""
+    tenant = get_tenant(tenant_id)
+    form = await request.form()
+
+    site_id = (form.get("site_id") or "").strip()
+    if not site_id:
+        flash(request, "Choisissez d'abord un site SharePoint.", "error")
+        return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
+
+    mass_folders = parse_shortcuts(form.get("mass_folders", ""))
+    excluded = sorted({(u or "").strip().lower() for u in form.getlist("exclude_upn") if u})
+
+    upns = form.getlist("deploy_upn")
+    names = form.getlist("deploy_name")
+    folder_lists = form.getlist("deploy_folders")
+    per_user = []
+    for i, upn in enumerate(upns):
+        upn = (upn or "").strip().lower()
+        folders = parse_shortcuts(folder_lists[i] if i < len(folder_lists) else "")
+        if upn and "@" in upn and folders:
+            per_user.append({
+                "upn": upn,
+                "display_name": (names[i] if i < len(names) else "").strip(),
+                "folders": folders,
+            })
+
+    if not mass_folders and not per_user:
+        flash(request, "Aucun dossier choisi : rien a deployer.", "error")
+        return RedirectResponse(f"/tenants/{tenant_id}", status_code=303)
+
+    spec = {
+        "site": {"mode": "existing", "site_id": site_id,
+                 "display_name": (form.get("site_name") or "").strip()},
+        "mass_folders": mass_folders,
+        "excluded": excluded,
+        "per_user": per_user,
+        "onedrive_wait": read_onedrive_wait(form),
+    }
+    job_id = jobs.create_job(tenant_id, "deploiement de raccourcis", operator.username, spec)
+    db.audit(
+        operator.username,
+        "raccourcis.deploies",
+        target=tenant_id,
+        detail={"job": job_id, "site": site_id, "pour_tous": mass_folders,
+                "exclus": len(excluded), "individuels": len(per_user)},
+    )
+
+    async def runner(ctx: jobs.JobContext) -> dict:
+        return await provisioning.run_deployment(ctx, tenant, spec)
 
     jobs.launch(job_id, tenant_id, operator.username, runner)
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
@@ -411,7 +475,7 @@ async def list_site_folders(
     tenant_id: str,
     site_id: str = Query(...),
     path: str = Query(""),
-    depth: int = Query(2, ge=1, le=4),
+    depth: int = Query(2, ge=1, le=5),
     operator: Operator = Depends(current_operator),
 ):
     """Dossiers de la bibliotheque « Documents » d'un site, pour le choix
@@ -443,12 +507,23 @@ async def list_site_folders(
 
 @router.get("/api/tenants/{tenant_id}/users")
 async def search_users(
-    tenant_id: str, q: str = Query(""), operator: Operator = Depends(current_operator)
+    tenant_id: str,
+    q: str = Query(""),
+    deployable: bool = Query(False),
+    operator: Operator = Depends(current_operator),
 ):
+    """Recherche de comptes ; `deployable=1` renvoie tous les comptes
+    eligibles a un raccourci (actifs, internes, avec licence)."""
     get_tenant(tenant_id)
     try:
         async with GraphClient(tenant_id) as graph:
-            users = await graph.list_users(q, limit=25)
+            if deployable:
+                users = [
+                    u for u in await graph.list_users("", limit=provisioning.DEPLOY_MAX_USERS * 2)
+                    if provisioning.is_deployable(u)
+                ]
+            else:
+                users = await graph.list_users(q, limit=25)
             # Les licences arrivent sous forme de skuId : on les traduit avec
             # le catalogue du tenant, lu une seule fois pour toute la liste.
             catalogue = {

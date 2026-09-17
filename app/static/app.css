@@ -364,3 +364,36 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
 .sp-access > div { display: flex; flex-direction: column; gap: .15rem; }
 
 .portal-links { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-bottom: .4rem; }
+
+/* --- Deploiement de raccourcis ------------------------------------------ */
+.deploy h2 { margin-bottom: .4rem; }
+.deploy-step { padding: 1rem 0; border-top: 1px solid var(--border); }
+.deploy-step h3 { display: flex; align-items: center; gap: .5rem; margin: 0 0 .6rem; font-size: 1.05rem; }
+.deploy-step h3.inline { display: inline-flex; margin: 0; }
+.deploy-step summary { cursor: pointer; }
+.deploy-step .step-info { margin-left: auto; font-weight: normal; }
+.list-filter { max-width: 22rem; margin-bottom: .5rem; }
+.site-list { display: grid; gap: .35rem; max-height: 19rem; overflow-y: auto; }
+.site-item { display: grid; grid-template-columns: auto 1fr; column-gap: .6rem; align-items: center;
+  padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.site-item input { grid-row: span 2; }
+.site-item .site-url { grid-column: 2; overflow-wrap: anywhere; }
+.site-item.selected { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.folder-tree { display: grid; gap: .15rem; max-height: 22rem; overflow-y: auto; }
+.tree-item { margin: 0; padding-top: .15rem; padding-bottom: .15rem; }
+.check-list { display: grid; gap: .15rem; max-height: 16rem; overflow-y: auto; }
+.user-rows { display: grid; gap: .3rem; max-height: 32rem; overflow-y: auto; }
+.user-row { display: grid; grid-template-columns: minmax(12rem, 1fr) 2fr; gap: .8rem; align-items: center;
+  padding: .45rem .6rem; border-bottom: 1px solid var(--border); }
+.user-row.has-folders { background: var(--surface); box-shadow: inset 3px 0 0 var(--accent); }
+.user-id { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.user-folders { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.user-folders select { width: auto; min-width: 12rem; }
+.deploy-actions { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.deploy-options { max-width: 28rem; }
+.more-actions { margin-top: 1.5rem; }
+.more-actions > summary { cursor: pointer; font-weight: 600; padding: .6rem 0; }
+.more-buttons { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0 1rem; }
+@media (max-width: 640px) {
+  .user-row { grid-template-columns: 1fr; }
+}

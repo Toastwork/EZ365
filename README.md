@@ -185,11 +185,33 @@ d'environnement manquantes.
    connecter avec un compte administrateur general du client, ou transmettre le
    lien a l'administrateur du client (`/tenants/connect/link`). Le retour sur
    `/ms/callback` enregistre le tenant.
-3. **Choisir la destination Bitwarden** du client (organisation + collection).
-   Ce reglage est memorise par tenant.
-4. **Provisionner** : renseigner le site, les utilisateurs (saisie ligne a
-   ligne ou collage depuis Excel), les licences, puis lancer. Le journal
-   s'affiche en direct et reste consultable ensuite.
+3. **Deployer des raccourcis** : c'est l'ecran principal de la fiche client
+   (voir ci-dessous).
+4. Le reste est replie sous **« Autres actions »** : creation d'un site ou de
+   comptes (avec licences et depot Bitwarden), destination Bitwarden du
+   client, diagnostic OneDrive, retrait du client.
+
+### Deployer des raccourcis
+
+La fiche client s'ouvre sur trois etapes :
+
+1. **Site** : la liste des sites SharePoint du tenant ; un site absent se
+   retrouve en collant son adresse.
+2. **Pour tous les utilisateurs** : cocher les dossiers de la bibliotheque
+   (jusqu'a trois niveaux, ou la bibliotheque entiere). Ils sont poses chez
+   **tous les comptes actifs, internes et licencies** — boites partagees,
+   comptes desactives et invites sont ecartes d'office. Des comptes peuvent
+   etre exclus dans « Exclure des comptes ».
+3. **Par utilisateur** (replie) : ajouter des dossiers supplementaires a
+   certains comptes. Un compte exclu du lot commun garde ses ajouts
+   individuels.
+
+Un seul bouton **Deployer** lance le tout. Le traitement cree les OneDrive
+manquants, ajoute les comptes au groupe du site s'il s'agit d'un site
+d'equipe, puis pose les raccourcis ; ceux deja en place sont reconnus
+(« deja present »), le deploiement peut donc etre relance sans risque. La
+liste des comptes est relue au lancement : un compte arrive entre-temps est
+inclus. Limite : 1000 comptes par traitement.
 
 ### Creer le site seul
 
