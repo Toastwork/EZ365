@@ -15,6 +15,9 @@ services:
       LDAP_DOMAIN: "${LDAP_DOMAIN}"
       LDAP_BASE_DN: "${LDAP_BASE_DN}"
       LDAP_REQUIRED_GROUP: "${LDAP_REQUIRED_GROUP:-Informatique}"
+      # Connexion unique depuis HALL : cle publique affichee par HALL sur
+      # /cle-publique. Vide = connexion par HALL desactivee.
+      HALL_PUBLIC_KEY: "${HALL_PUBLIC_KEY:-}"
       STORAGE_KEY: "${STORAGE_KEY}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
 

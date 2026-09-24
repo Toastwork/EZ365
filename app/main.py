@@ -23,7 +23,7 @@ from .vault import bitwarden
 
 log = logging.getLogger(__name__)
 
-PUBLIC_PATHS = {"/login", "/logout", "/ms/callback", "/healthz", "/favicon.ico"}
+PUBLIC_PATHS = {"/login", "/logout", "/sso", "/ms/callback", "/healthz", "/favicon.ico"}
 
 
 @asynccontextmanager
