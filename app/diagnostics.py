@@ -54,6 +54,11 @@ def token_claims(token: str) -> dict:
 
 
 REQUIRED_SHAREPOINT_ROLE = "Sites.FullControl.All"
+# CreatePersonalSiteEnqueueBulk touche aux profils utilisateur : la seule
+# permission Sites.FullControl.All ne suffit pas, SharePoint repond alors 403
+# « cette application ne dispose pas des autorisations necessaires pour acceder
+# a des informations de profil ».
+REQUIRED_SHAREPOINT_ROLES = (REQUIRED_SHAREPOINT_ROLE, "User.ReadWrite.All")
 REQUIRED_GRAPH_ROLES = (
     "User.ReadWrite.All", "Organization.Read.All", "Domain.Read.All",
     "Sites.ReadWrite.All",
@@ -65,6 +70,10 @@ MISPLACED_HINT = (
     "l'etre sous « SharePoint » (Autorisations de l'API → Ajouter une autorisation "
     "→ SharePoint → Autorisations de l'application), puis consentement a renouveler."
 )
+
+
+def missing_sharepoint_roles(roles: list) -> list[str]:
+    return [r for r in REQUIRED_SHAREPOINT_ROLES if r not in roles]
 
 
 def missing_graph_roles(roles: list) -> list[str]:
@@ -102,7 +111,7 @@ async def sharepoint_access(tenant_id: str) -> dict:
         return {"state": "error", "message": str(exc)}
 
     roles = token_claims(token).get("roles") or []
-    if REQUIRED_SHAREPOINT_ROLE not in roles:
+    if missing_sharepoint_roles(roles):
         # jeton en cache anterieur au consentement : en redemander un
         try:
             token = await oauth.get_app_token(
@@ -112,7 +121,8 @@ async def sharepoint_access(tenant_id: str) -> dict:
             roles = token_claims(token).get("roles") or []
         except oauth.ConsentError:
             pass
-    if REQUIRED_SHAREPOINT_ROLE in roles:
+    missing = missing_sharepoint_roles(roles)
+    if not missing:
         return {"state": "ok", "message": "Acces SharePoint operationnel.", "roles": roles}
     try:
         graph_roles = token_claims(await oauth.get_app_token(tenant_id)).get("roles") or []
@@ -123,7 +133,7 @@ async def sharepoint_access(tenant_id: str) -> dict:
     return {
         "state": "reconsent",
         "message": (
-            f"Le jeton SharePoint ne contient pas {REQUIRED_SHAREPOINT_ROLE} "
+            f"Le jeton SharePoint ne contient pas {', '.join(missing)} "
             f"(permissions recues : {', '.join(roles) or 'aucune'}). "
             "Soit la permission n'est pas declaree sur l'application Azure, soit ce "
             "client ne l'a pas encore acceptee, soit le consentement se propage "
@@ -235,11 +245,12 @@ async def onedrive_diagnostic(tenant_id: str, upn: str) -> list[Step]:
                 "jeton delivre par Entra ID ; roles SharePoint : "
                 + (", ".join(roles) if roles else "AUCUN (permission SharePoint non consentie)")
             )
-            if REQUIRED_SHAREPOINT_ROLE not in roles:
+            missing = missing_sharepoint_roles(roles)
+            if missing:
                 step.ok = False
                 step.summary += " ; " + (
                     MISPLACED_HINT if REQUIRED_SHAREPOINT_ROLE in graph_roles
-                    else f"{REQUIRED_SHAREPOINT_ROLE} (API SharePoint) absente du jeton"
+                    else f"MANQUANTES (API SharePoint) : {', '.join(missing)}"
                 )
         except (oauth.ConsentError, GraphError) as exc:
             step.ok, step.summary = False, str(exc)

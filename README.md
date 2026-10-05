@@ -69,6 +69,7 @@ administrateur. La liste est volontairement resserree :
 | Graph | `GroupMember.ReadWrite.All` | ajouter membres et proprietaires aux groupes des sites |
 | Graph | `Sites.ReadWrite.All` | sites, bibliotheques, dossiers, OneDrive et raccourcis |
 | SharePoint | `Sites.FullControl.All` | initialiser les OneDrive, creer les sites de communication |
+| SharePoint | `User.ReadWrite.All` | lire et ecrire les profils, exige par `CreatePersonalSiteEnqueueBulk` |
 
 Pourquoi pas moins :
 
@@ -104,8 +105,10 @@ de l'interface la detaille et propose le fichier :
 
 1. telecharger le `.cer` et le deposer dans *Certificats & secrets* de
    l'application Azure (l'empreinte doit correspondre) ;
-2. ajouter la permission **applicative** `Sites.FullControl.All` de l'API
-   *SharePoint* ;
+2. ajouter les permissions **applicatives** `Sites.FullControl.All` et
+   `User.ReadWrite.All` de l'API *SharePoint* (la seconde donne l'acces aux
+   profils : sans elle, SharePoint repond 403 « autorisations necessaires pour
+   acceder a des informations de profil ») ;
 3. faire accepter cette permission par les clients **deja connectes** : un
    clic sur « Renouveler » par client.
 
@@ -244,8 +247,8 @@ il a pu aboutir malgre tout, a verifier avant de le refaire.
 
 **OneDrive.** EZ365 demande la creation des OneDrive a SharePoint
 (`CreatePersonalSiteEnqueueBulk`), la seule voie fiable avec un jeton
-applicatif ; elle exige la permission `Sites.FullControl.All` de l'API
-SharePoint. Sans elle, il retombe sur une simple lecture Graph, qui ne
+applicatif ; elle exige les permissions `Sites.FullControl.All` et
+`User.ReadWrite.All` de l'API SharePoint. Sans elle, il retombe sur une simple lecture Graph, qui ne
 declenche pas toujours la creation. Un OneDrive pas pret a la fin de l'attente
 finit de se creer seul : un nouveau passage en « utilisateur existant » pose
 alors les raccourcis manquants.

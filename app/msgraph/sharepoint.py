@@ -8,7 +8,8 @@ Deux modes de creation :
 * `communication` : site de communication cree via l'API SharePoint REST
                     (_api/SPSiteManager/create), qui exige un jeton dont
                     l'audience est https://<tenant>.sharepoint.com et la
-                    permission applicative Sites.FullControl.All.
+                    permissions applicatives Sites.FullControl.All et
+                    User.ReadWrite.All (API SharePoint).
 """
 from __future__ import annotations
 
@@ -60,11 +61,21 @@ def explain_sharepoint_refusal(resp: httpx.Response) -> str:
             "SharePoint refuse le jeton (401) : certificat pas encore depose sur "
             "l'application Azure, ou consentement du tenant a renouveler."
         )
+    if resp.status_code == 403 and "profil" in text.lower():
+        # Message SharePoint : « cette application ne dispose pas des
+        # autorisations necessaires pour acceder a des informations de profil ».
+        return (
+            "SharePoint refuse l'acces aux profils (403) : il manque la permission "
+            "applicative User.ReadWrite.All de l'API SharePoint (« Lire et ecrire "
+            "les profils utilisateur »), en plus de Sites.FullControl.All. "
+            "Ajoutez-la sur l'application Azure, puis renouvelez le consentement "
+            "de ce client."
+        )
     if resp.status_code == 403:
         return (
-            "SharePoint refuse l'operation (403) : la permission applicative "
-            "Sites.FullControl.All de l'API SharePoint manque, ou n'a pas ete "
-            "consentie sur ce tenant."
+            "SharePoint refuse l'operation (403) : les permissions applicatives "
+            "Sites.FullControl.All et User.ReadWrite.All de l'API SharePoint "
+            "manquent, ou n'ont pas ete consenties sur ce tenant."
         )
     return f"HTTP {resp.status_code} {text}"
 

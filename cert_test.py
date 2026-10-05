@@ -157,7 +157,8 @@ check("401 secret refuse -> certificat", "certificat" in msg, msg)
 msg = sharepoint.explain_sharepoint_refusal(httpx.Response(401, text="", request=req))
 check("401 autre -> depot ou consentement", "depose" in msg, msg)
 msg = sharepoint.explain_sharepoint_refusal(httpx.Response(403, text="Access denied", request=req))
-check("403 -> permission Sites.FullControl.All", "Sites.FullControl.All" in msg, msg)
+check("403 -> permissions SharePoint nommees",
+      "Sites.FullControl.All" in msg and "User.ReadWrite.All" in msg, msg)
 
 # --- pages ------------------------------------------------------------------------------
 from fastapi.testclient import TestClient

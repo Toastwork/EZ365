@@ -168,7 +168,7 @@ async def access_tests():
     diagnostics._hostnames.clear()
 
     async def with_role(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
-        return fake_token({"roles": ["Sites.FullControl.All"]})
+        return fake_token({"roles": ["Sites.FullControl.All", "User.ReadWrite.All"]})
 
     async def without_role(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
         return fake_token({"roles": []})
@@ -212,7 +212,7 @@ with TestClient(app) as client:
           "consentement a renouveler" in page and "/tenants/t1/reconsent" in page)
 
     async def ok_role(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
-        return fake_token({"roles": ["Sites.FullControl.All"]})
+        return fake_token({"roles": ["Sites.FullControl.All", "User.ReadWrite.All"]})
     oauth.get_app_token = ok_role
     page = client.get("/tenants/t1").text
     check("pas de bandeau quand tout va bien", "Renouveler le consentement" not in page)
@@ -234,6 +234,13 @@ with TestClient(app) as client:
 from app.msgraph.oauth import _token_roles
 check("roles lus par oauth", _token_roles(fake_token({"roles": ["A"]})) == ["A"])
 check("jeton sans role detecte", _token_roles(fake_token({})) == [] and _token_roles("x") == [])
+
+# roles SharePoint : les deux sont exiges -------------------------------------------
+check("profils exiges en plus du controle total",
+      diagnostics.missing_sharepoint_roles(["Sites.FullControl.All"]) == ["User.ReadWrite.All"])
+check("les deux roles presents : rien ne manque",
+      diagnostics.missing_sharepoint_roles(["User.ReadWrite.All", "Sites.FullControl.All"]) == [])
+
 
 # permission SharePoint declaree sous Graph ------------------------------------------
 check("roles Graph manquants", diagnostics.missing_graph_roles(
