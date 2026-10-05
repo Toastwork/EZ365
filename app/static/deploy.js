@@ -95,6 +95,10 @@ async function loadSiteFolders(siteId) {
   }
   renderFolderTree();
   renderFolderSelects();
+  if (deploy.users.length) {
+    const hint = document.getElementById("users-state");
+    if (hint) { hint.textContent = "Ajoutez un dossier a un compte pour le lui deployer en plus."; }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +158,9 @@ async function loadDeployUsers() {
     return;
   }
   state.textContent = deploy.users.length
-    ? "Ajoutez un dossier a un compte pour le lui deployer en plus."
+    ? (siteChosen()
+        ? "Ajoutez un dossier a un compte pour le lui deployer en plus."
+        : "Choisissez d'abord un site a l'etape 1, ses dossiers apparaitront ici.")
     : "Aucun compte actif avec licence sur ce tenant.";
   renderUsers();
   refreshDeployInfo();
@@ -200,8 +206,10 @@ function renderFolderSelects() {
   document.querySelectorAll(".deploy-folder-select").forEach(function (select) {
     select.innerHTML = "";
     const ready = siteChosen();
-    select.appendChild(new Option(ready ? "+ ajouter un dossier…" : "choisissez d'abord un site", ""));
-    select.disabled = !ready;
+    // Jamais desactivee : une liste grisee n'explique pas pourquoi. Elle reste
+    // ouvrable et renvoie a l'etape 1.
+    select.appendChild(new Option(ready ? "+ ajouter un dossier…" : "Choisissez d'abord un site (etape 1)", ""));
+    select.onfocus = ready ? null : askForSite;
     if (!ready) { return; }
     select.appendChild(new Option("Bibliotheque entiere", "__root__"));
     deploy.folders.forEach(function (folder) {
@@ -212,6 +220,18 @@ function renderFolderSelects() {
   });
 }
 
+// Pas de site choisi : on le dit et on remonte a l'etape 1 plutot que de
+// bloquer la liste.
+function askForSite() {
+  const state = document.getElementById("users-state");
+  if (state) { state.textContent = "Choisissez d'abord un site a l'etape 1, ses dossiers apparaitront ici."; }
+  const list = document.getElementById("site-list");
+  if (!list) { return; }
+  list.classList.add("ask");
+  list.scrollIntoView({ behavior: "smooth", block: "center" });
+  setTimeout(function () { list.classList.remove("ask"); }, 2000);
+}
+
 function siteChosen() {
   return !!deployForm().querySelector("input[name=site_id]:checked");
 }
@@ -219,7 +239,7 @@ function siteChosen() {
 function addUserFolder(select) {
   const value = select.value;
   select.value = "";
-  if (!value) { return; }
+  if (!value) { if (!siteChosen()) { askForSite(); } return; }
   const folder = value === "__root__" ? "" : value;
   const row = select.closest(".user-row");
   const field = row.querySelector("[name=deploy_folders]");

@@ -507,3 +507,6 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
 .search-empty { padding: 16px; }
 .theme-toggle { margin-left: auto; }
 .theme-toggle + .who { margin-left: 0; }
+
+/* Rappel visuel quand on demande un dossier sans avoir choisi de site. */
+.site-list.ask { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: var(--radius-sm); }
