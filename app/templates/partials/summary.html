@@ -36,9 +36,9 @@
           {% if u.site_access == 'echec' %}<span class="pill pill-ko">echec</span>
           {% elif u.site_access == 'non gere' %}<span class="pill pill-warn">a accorder</span>
           {% elif u.site_access %}<span class="pill pill-ok">{{ u.site_access }}</span>
-          {% else %}—{% endif %}
+          {% else %}-{% endif %}
         </td>
-        <td class="small">{{ u.license_names | join(', ') if u.license_names else '—' }}</td>
+        <td class="small">{{ u.license_names | join(', ') if u.license_names else '-' }}</td>
         <td class="small">{{ u.onedrive }}</td>
         <td class="small">
           {% if u.shortcuts %}

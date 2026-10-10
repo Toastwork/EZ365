@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="fr">
+{% import "partials/icons.html" as ic %}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,25 +17,21 @@
 </head>
 {% set path = request.url.path if request else "" %}
 <body class="{{ 'with-nav' if operator else 'no-nav' }}">
+<a class="skip-link" href="#contenu">Aller au contenu</a>
 <header class="suite-header">
   {% if operator %}
   <button class="icon-btn nav-toggle" type="button" aria-label="Afficher ou masquer la navigation"
-          onclick="toggleNav()">
-    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
-  </button>
+          onclick="toggleNav()">{{ ic.icon("navigation") }}</button>
   {% endif %}
   <a class="brand" href="/">
-    <svg class="brand-mark" viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/>
-      <rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/>
-    </svg>
+    {{ ic.icon("grid") }}
     <span class="brand-name">EZ365</span>
     <span class="brand-sub">Centre d'administration</span>
   </a>
   <button class="icon-btn theme-toggle" type="button" onclick="toggleTheme()"
           aria-label="Basculer entre mode clair et mode sombre" title="Mode clair / sombre">
-    <svg class="moon" viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 12.5A6.5 6.5 0 0 1 7.5 4.5a6.5 6.5 0 1 0 8 8z"/></svg>
-    <svg class="sun" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.5"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.3 4.3l1.4 1.4M14.3 14.3l1.4 1.4M4.3 15.7l1.4-1.4M14.3 5.7l1.4-1.4"/></svg>
+    <span class="moon">{{ ic.icon("moon") }}</span>
+    <span class="sun">{{ ic.icon("sun") }}</span>
   </button>
   {% if operator %}
   <div class="who">
@@ -49,23 +46,20 @@
   {% if operator %}
   <nav class="sidenav" aria-label="Navigation principale">
     <a href="/" class="{{ 'active' if path == '/' }}" title="Tableau de bord">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9.5 10 3l7 6.5V17h-4.5v-4.5h-5V17H3z"/></svg>
-      <span>Tableau de bord</span>
+      {{ ic.icon("home") }}<span>Tableau de bord</span>
     </a>
     {% if tenant is defined and tenant and tenant.id %}
     <a href="/tenants/{{ tenant.id }}" class="sub {{ 'active' if path.startswith('/tenants/' ~ tenant.id) }}"
        title="{{ tenant.display_name or tenant.id }}">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="1.5"/><path d="M7 7h6M7 10h6M7 13h3"/></svg>
-      <span>{{ tenant.display_name or tenant.id }}</span>
+      {{ ic.icon("building") }}<span>{{ tenant.display_name or tenant.id }}</span>
     </a>
     {% endif %}
     <a href="/tenants/connect" class="{{ 'active' if path == '/tenants/connect' }}" title="Connecter un tenant">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 6.5v7M6.5 10h7"/></svg>
-      <span>Connecter un tenant</span>
+      {{ ic.icon("plug") }}<span>Connecter un tenant</span>
     </a>
+    <div class="sidenav-sep"></div>
     <a href="/settings/certificate" class="{{ 'active' if path.startswith('/settings/certificate') }}" title="Certificat SharePoint">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="10" rx="1.5"/><circle cx="13" cy="13.5" r="2.5"/><path d="M12 15.5 11.5 18l1.5-.8 1.5.8-.5-2.5M6 7.5h6M6 10h3"/></svg>
-      <span>Certificat SharePoint</span>
+      {{ ic.icon("certificate") }}<span>Certificat SharePoint</span>
     </a>
     <div class="sidenav-foot">
       <span class="build" title="version">{{ build_ref }}</span>
@@ -73,19 +67,22 @@
   </nav>
   {% endif %}
 
-  <main class="page">
+  <main class="page" id="contenu">
     {% if operator and tenant is defined and tenant and tenant.id and path != '/tenants/' ~ tenant.id %}
-    <div class="breadcrumb">
-      <a href="/">Tableau de bord</a><span>›</span>
+    <nav class="breadcrumb" aria-label="Fil d'Ariane">
+      <a href="/">Tableau de bord</a>{{ ic.icon("chevron") }}
       <a href="/tenants/{{ tenant.id }}">{{ tenant.display_name or tenant.id }}</a>
-    </div>
+    </nav>
     {% endif %}
     {% if flash %}
-      <div class="flash flash-{{ flash.level }}">{{ flash.message }}</div>
+      <div class="flash flash-{{ flash.level }}" role="status">
+        {{ ic.icon({'error': 'error', 'success': 'check'}.get(flash.level, 'info')) }}
+        <span>{{ flash.message }}</span>
+      </div>
     {% endif %}
     {% block content %}{% endblock %}
     <footer class="footer">
-      <span>{{ app_name }} — provisionnement Microsoft 365</span>
+      <span>{{ app_name }} · provisionnement Microsoft 365</span>
       <span class="build">version {{ build_ref }}</span>
     </footer>
   </main>

@@ -1,24 +1,62 @@
 {% extends "base.html" %}
-{% block title %}Tableau de bord — {{ app_name }}{% endblock %}
+{% import "partials/icons.html" as ic %}
+{% block title %}Tableau de bord · {{ app_name }}{% endblock %}
 {% block content %}
 
 <div class="page-head">
   <div>
     <h1>Tableau de bord</h1>
-    <p class="muted">Tenants connectes : chacun a accorde le consentement administrateur a l'application EZ365.</p>
+    <p class="muted">Clients dont le tenant Microsoft 365 est connecte a EZ365.</p>
   </div>
-  <a class="btn btn-primary" href="/tenants/connect">Connecter un tenant</a>
+  <div class="head-actions">
+    <a class="btn btn-primary" href="/tenants/connect">{{ ic.icon("plug") }} Connecter un tenant</a>
+  </div>
 </div>
 
-<div class="status-strip {{ 'ok' if vault_ready else 'ko' }}">
-  <strong>Coffre Bitwarden</strong>
-  <span>{{ vault_message }}</span>
+{% set a_verifier = tenants | rejectattr('status', 'equalto', 'ok') | list | length %}
+<div class="stat-row">
+  <div class="stat">
+    {{ ic.icon("building") }}
+    <div>
+      <div class="stat-value">{{ tenants | length }}</div>
+      <div class="stat-label">client(s) connecte(s)</div>
+    </div>
+  </div>
+  <div class="stat {{ 'stat-ko' if a_verifier else 'stat-ok' }}">
+    {{ ic.icon("warning" if a_verifier else "check") }}
+    <div>
+      <div class="stat-value">{{ a_verifier }}</div>
+      <div class="stat-label">connexion(s) a verifier</div>
+    </div>
+  </div>
+  <div class="stat">
+    {{ ic.icon("list") }}
+    <div>
+      <div class="stat-value">{{ jobs | length }}</div>
+      <div class="stat-label">traitement(s) recent(s)</div>
+    </div>
+  </div>
+  <div class="stat {{ 'stat-ok' if vault_ready else 'stat-ko' }}">
+    {{ ic.icon("key") }}
+    <div>
+      <div class="stat-value">{{ 'Pret' if vault_ready else 'Indisponible' }}</div>
+      <div class="stat-label">coffre Bitwarden</div>
+    </div>
+  </div>
 </div>
+
+{% if not vault_ready %}
+<div class="status-strip ko">
+  {{ ic.icon("error") }}
+  <div><strong>Coffre Bitwarden</strong> <span>{{ vault_message }}</span></div>
+</div>
+{% endif %}
 
 {% if tenants %}
 <div class="search-box">
-  <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="m10 10 4 4"/></svg>
+  {{ ic.icon("search") }}
   <input id="dashboard-search" type="search" autocomplete="off" autofocus
+         aria-label="Rechercher un client"
          placeholder="Rechercher un client, un domaine ou un ID de tenant"
          value="{{ request.query_params.get('q', '') }}" oninput="filterDashboard(this.value)">
 </div>
@@ -36,15 +74,24 @@
   {% for t in tenants %}
     <tr data-search="{{ [t.display_name, t.default_domain, t.id] | join(' ') | lower }}">
       <td>
-        <a class="strong" href="/tenants/{{ t.id }}">{{ t.display_name or t.id }}</a>
-        <div class="muted mono small">{{ t.id }}</div>
+        <div class="cell-main">
+          {{ ic.icon("building") }}
+          <div>
+            <a class="cell-title" href="/tenants/{{ t.id }}">{{ t.display_name or t.id }}</a>
+            <div class="muted mono small">{{ t.id }}</div>
+          </div>
+        </div>
       </td>
-      <td>{{ t.default_domain or '—' }}</td>
-      <td><span class="pill pill-{{ 'ok' if t.status == 'ok' else 'warn' }}">{{ t.status }}</span></td>
-      <td class="muted small">
-        {{ t.consented_at | dt }}<br>par {{ t.consented_by }}
+      <td>{{ t.default_domain or '-' }}</td>
+      <td>
+        <span class="pill pill-{{ 'ok' if t.status == 'ok' else 'warn' }}">
+          {{ ic.icon("check" if t.status == 'ok' else "warning") }}{{ t.status }}
+        </span>
       </td>
-      <td class="right"><a class="btn btn-small" href="/tenants/{{ t.id }}">Ouvrir</a></td>
+      <td class="muted small">{{ t.consented_at | dt }}<br>par {{ t.consented_by }}</td>
+      <td class="right">
+        <a class="btn btn-small" href="/tenants/{{ t.id }}">{{ ic.icon("open") }} Ouvrir</a>
+      </td>
     </tr>
   {% endfor %}
   </tbody>
@@ -52,12 +99,14 @@
 <p id="search-empty" class="card muted search-empty hidden">Aucun client ne correspond a la recherche.</p>
 {% else %}
 <div class="empty card">
-  <h2>Aucun tenant pour l'instant</h2>
-  <p>
+  {{ ic.icon("plug") }}
+  <h2>Aucun client pour l'instant</h2>
+  <p class="muted">
     Cliquez sur <strong>Connecter un tenant</strong> et authentifiez-vous avec un compte
     administrateur general du client. Vous pouvez aussi transmettre le lien de consentement
     a l'administrateur du client s'il refuse de vous confier ses acces.
   </p>
+  <p><a class="btn btn-primary" href="/tenants/connect">{{ ic.icon("plug") }} Connecter un tenant</a></p>
 </div>
 {% endif %}
 
@@ -71,11 +120,15 @@
   {% for j in jobs %}
     <tr data-search="{{ [j.tenant_name, j.tenant_id, j.kind, j.created_by] | join(' ') | lower }}">
       <td>{{ j.tenant_name or j.tenant_id }}</td>
-      <td>{{ j.kind }}</td>
-      <td><span class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(j.status,'warn') }}">{{ j.status }}</span></td>
+      <td class="muted">{{ j.kind }}</td>
+      <td>
+        <span class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(j.status,'warn') }}">
+          {{ ic.icon({'done':'check','error':'error'}.get(j.status,'sync')) }}{{ j.status }}
+        </span>
+      </td>
       <td class="muted small">{{ j.created_at | dt }}</td>
       <td class="muted small">{{ j.created_by }}</td>
-      <td class="right"><a class="btn btn-small" href="/jobs/{{ j.id }}">Journal</a></td>
+      <td class="right"><a class="btn btn-small" href="/jobs/{{ j.id }}">{{ ic.icon("list") }} Journal</a></td>
     </tr>
   {% endfor %}
   </tbody>

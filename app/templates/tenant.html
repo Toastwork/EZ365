@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}{{ tenant.display_name or tenant.id }} — {{ app_name }}{% endblock %}
+{% import "partials/icons.html" as ic %}
+{% block title %}{{ tenant.display_name or tenant.id }} · {{ app_name }}{% endblock %}
 {% block content %}
 
 <div class="page-head">
@@ -7,26 +8,32 @@
     <h1>{{ tenant.display_name or tenant.id }}</h1>
     <p class="muted mono small">{{ tenant.id }} · {{ tenant.default_domain or 'domaine inconnu' }}</p>
   </div>
-  <div class="head-actions">
-    <form method="post" action="/tenants/{{ tenant.id }}/refresh">
-      <button class="btn" type="submit">Verifier la connexion</button>
-    </form>
-  </div>
+</div>
+
+<div class="command-bar">
+  <form method="post" action="/tenants/{{ tenant.id }}/refresh">
+    <button class="btn" type="submit">{{ ic.icon("sync") }} Verifier la connexion</button>
+  </form>
+  <a class="btn" href="/tenants/{{ tenant.id }}/diagnostic">{{ ic.icon("stethoscope") }} Diagnostic OneDrive</a>
+  <span class="sep"></span>
+  <a class="btn" href="/settings/certificate">{{ ic.icon("certificate") }} Certificat</a>
 </div>
 
 {% if graph_error %}
 <div class="flash flash-error">
-  Lecture du tenant impossible : {{ graph_error }}
+  {{ ic.icon("error") }}
+  <span>Lecture du tenant impossible : {{ graph_error }}</span>
 </div>
 {% endif %}
 
 {% if sp_access and sp_access.state != "ok" %}
 <div class="status-strip ko sp-access">
+  {{ ic.icon("error") }}
   <div>
     <strong>Creation des OneDrive indisponible</strong>
     <span>
       {% if sp_access.state == "reconsent" %}
-        Ce client n'a pas encore accepte la permission SharePoint d'EZ365.
+        Ce client n'a pas encore accepte les permissions SharePoint d'EZ365.
       {% elif sp_access.state == "misplaced" %}
         La permission Sites.FullControl.All est declaree sous Microsoft Graph au lieu de SharePoint.
       {% elif sp_access.state == "certificate" %}
@@ -51,15 +58,30 @@
 <!-- ------------------------------------------------------------------ -->
 <form method="post" action="/tenants/{{ tenant.id }}/deploy" class="card deploy" id="deploy"
       data-tenant="{{ tenant.id }}" onsubmit="return confirmDeploy(this);">
-  <h2>Deployer des raccourcis SharePoint</h2>
   <input type="hidden" name="site_name" value="">
   <input type="hidden" name="mass_folders" value="[]">
 
+  <div class="deploy-intro">
+    <div class="card-head">
+      {{ ic.icon("rocket") }}
+      <h2>Deployer des raccourcis SharePoint</h2>
+    </div>
+    <p class="card-sub">
+      Choisissez un site, les dossiers a poser chez tout le monde, puis les
+      ajouts au cas par cas. Les OneDrive manquants sont crees au passage.
+    </p>
+  </div>
+
   <!-- 1. site ----------------------------------------------------------- -->
   <section class="deploy-step">
-    <h3><span class="step-num">1</span> Site</h3>
-    {% if sites|length > 8 %}
+    <div class="step-head">
+      <span class="step-badge" id="badge-1"><span class="step-num-text">1</span>{{ ic.icon("check") }}</span>
+      <h3>Site SharePoint</h3>
+      <span class="step-info" id="site-info">aucun site choisi</span>
+    </div>
+    {% if sites | length > 8 %}
       <input class="list-filter" type="search" placeholder="Filtrer les sites…"
+             aria-label="Filtrer les sites"
              oninput="filterList('#site-list .site-item', this.value)">
     {% endif %}
     <div id="site-list" class="site-list">
@@ -67,6 +89,7 @@
         <label class="site-item">
           <input type="radio" name="site_id" value="{{ s.id }}"
                  data-name="{{ s.displayName or s.name }}" onchange="pickSite(this)">
+          {{ ic.icon("globe") }}
           <span class="site-name">{{ s.displayName or s.name }}
             {% if s.pending_index %}<span class="pill pill-warn">ajoute via EZ365</span>{% endif %}
           </span>
@@ -80,8 +103,9 @@
       <summary class="muted small">Site absent de la liste ?</summary>
       <div class="folder-add-row mt">
         <input id="deploy-site-url" placeholder="https://client.sharepoint.com/sites/NomDuSite"
+               aria-label="Adresse du site"
                onkeydown="if (event.key === 'Enter') { event.preventDefault(); findSiteByUrl(); }">
-        <button type="button" class="btn" onclick="findSiteByUrl()">Retrouver</button>
+        <button type="button" class="btn" onclick="findSiteByUrl()">{{ ic.icon("search") }} Retrouver</button>
       </div>
       <p id="deploy-site-status" class="muted small">
         Un site tout juste cree peut mettre quelques minutes a apparaitre.
@@ -91,15 +115,18 @@
 
   <!-- 2. pour tous ------------------------------------------------------- -->
   <section class="deploy-step" id="mass-step">
-    <h3><span class="step-num">2</span> Pour tous les utilisateurs
+    <div class="step-head">
+      <span class="step-badge" id="badge-2"><span class="step-num-text">2</span>{{ ic.icon("check") }}</span>
+      <h3>Pour tous les utilisateurs</h3>
       <span class="step-info" id="mass-info"></span>
-    </h3>
-    <p id="folder-state" class="muted small">Choisissez un site pour afficher ses dossiers.</p>
+    </div>
+    <p id="folder-state" class="step-note">Choisissez un site pour afficher ses dossiers.</p>
     <div id="mass-folders" class="folder-tree"></div>
 
     <details class="mt" id="exclude-block">
       <summary class="muted small">Exclure des comptes <span id="exclude-info"></span></summary>
       <input class="list-filter mt" type="search" placeholder="Filtrer…"
+             aria-label="Filtrer les comptes a exclure"
              oninput="filterList('#exclude-list label', this.value)">
       <div id="exclude-list" class="check-list"></div>
     </details>
@@ -108,44 +135,49 @@
   <!-- 3. par utilisateur ------------------------------------------------- -->
   <section class="deploy-step">
     <details id="per-user-block">
-      <summary>
-        <h3 class="inline"><span class="step-num">3</span> Par utilisateur
-          <span class="muted small">— en plus, au cas par cas</span>
-          <span class="step-info" id="per-user-info"></span>
-        </h3>
+      <summary class="step-head">
+        <span class="step-badge" id="badge-3"><span class="step-num-text">3</span>{{ ic.icon("check") }}</span>
+        <h3>Par utilisateur</h3>
+        <span class="step-info" id="per-user-info">facultatif</span>
       </summary>
       <input class="list-filter mt" type="search" placeholder="Filtrer les utilisateurs…"
+             aria-label="Filtrer les utilisateurs"
              oninput="filterList('#user-rows .user-row', this.value)">
-      <p id="users-state" class="muted small">Chargement des utilisateurs…</p>
+      <p id="users-state" class="step-note">Chargement des utilisateurs…</p>
       <div id="user-rows" class="user-rows"></div>
     </details>
   </section>
 
-  <div class="actions deploy-actions">
-    <details class="deploy-options">
-      <summary class="muted small">Options</summary>
-      <label for="deploy_onedrive_wait">Attente maximale d'un OneDrive a creer</label>
-      <select id="deploy_onedrive_wait" name="onedrive_wait">
-        <option value="0">Ne pas attendre</option>
-        <option value="60">1 minute</option>
-        <option value="120" selected>2 minutes</option>
-        <option value="300">5 minutes</option>
-        <option value="600">10 minutes</option>
-      </select>
-      <p class="muted small">
-        Les OneDrive manquants sont crees automatiquement. Passe ce delai, le
-        compte est ignore : relancez le deploiement plus tard, les raccourcis
-        deja poses sont reconnus.
-      </p>
-    </details>
-    <button class="btn btn-primary btn-lg" type="submit">Deployer</button>
+  <div class="deploy-actions">
+    <div class="deploy-recap">
+      <strong id="deploy-recap-main">Rien a deployer pour l'instant</strong>
+      <span id="deploy-recap-sub">Choisissez un site, puis au moins un dossier.</span>
+    </div>
+    <div class="head-actions">
+      <details class="deploy-options">
+        <summary>Options</summary>
+        <label for="deploy_onedrive_wait" class="mt">Attente maximale d'un OneDrive a creer</label>
+        <select id="deploy_onedrive_wait" name="onedrive_wait">
+          <option value="0">Ne pas attendre</option>
+          <option value="60">1 minute</option>
+          <option value="120" selected>2 minutes</option>
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+        </select>
+        <p class="muted small">
+          Passe ce delai, le compte est ignore : relancez le deploiement plus tard,
+          les raccourcis deja poses sont reconnus.
+        </p>
+      </details>
+      <button class="btn btn-primary btn-lg" type="submit">{{ ic.icon("rocket") }} Deployer</button>
+    </div>
   </div>
 </form>
 
 {% if jobs %}
 <details class="card history">
-  <summary><strong>Traitements de ce client</strong>
-    <span class="muted small">— {{ jobs|length }} recent(s)</span>
+  <summary>{{ ic.icon("list") }}<strong>Traitements de ce client</strong>
+    <span class="muted small">- {{ jobs|length }} recent(s)</span>
   </summary>
   <table class="table mt">
     <thead><tr><th>Etat</th><th>Lance</th><th>Par</th><th></th></tr></thead>
@@ -164,26 +196,26 @@
 {% endif %}
 
 <details class="more-actions">
-  <summary>Autres actions <span class="muted small">— creer un site ou des comptes, coffre Bitwarden, diagnostic</span></summary>
+  <summary>{{ ic.icon("chevron") }}Autres actions <span class="muted small">- creer un site ou des comptes, coffre Bitwarden, diagnostic</span></summary>
 
 <div class="more-buttons">
-  <a class="btn" href="/tenants/{{ tenant.id }}/diagnostic">Diagnostic OneDrive</a>
+  <a class="btn" href="/tenants/{{ tenant.id }}/diagnostic">{{ ic.icon("stethoscope") }} Diagnostic OneDrive</a>
   <form method="post" action="/tenants/{{ tenant.id }}/forget"
         onsubmit="return confirm('Retirer ce tenant d\'EZ365 ? Le consentement Microsoft reste actif.');">
-    <button class="btn btn-danger" type="submit">Retirer ce client d'EZ365</button>
+    <button class="btn btn-danger" type="submit">{{ ic.icon("delete") }} Retirer ce client d'EZ365</button>
   </form>
 </div>
 
 <details class="card">
   <summary><strong>Destination Bitwarden</strong>
-    <span class="muted small">— ou deposer les identifiants crees pour ce client</span>
+    <span class="muted small">- ou deposer les identifiants crees pour ce client</span>
   </summary>
   {% if vault_ready %}
   <form method="post" action="/tenants/{{ tenant.id }}/vault" class="grid-2 mt">
     <div>
       <label for="vault_org_id">Organisation</label>
       <select id="vault_org_id" name="vault_org_id" onchange="reloadCollections(this.value)">
-        <option value="">— Coffre personnel du compte de service —</option>
+        <option value="">- Coffre personnel du compte de service -</option>
         {% for o in vault_orgs %}
           <option value="{{ o.id }}" {% if o.id == tenant.vault_org_id %}selected{% endif %}>{{ o.name }}</option>
         {% endfor %}
@@ -192,7 +224,7 @@
     <div>
       <label for="vault_collection_id">Collection</label>
       <select id="vault_collection_id" name="vault_collection_id">
-        <option value="">— Aucune —</option>
+        <option value="">- Aucune -</option>
         {% for c in vault_collections %}
           <option value="{{ c.id }}" {% if c.id == tenant.vault_collection_id %}selected{% endif %}>{{ c.name }}</option>
         {% endfor %}
@@ -254,7 +286,7 @@
         <input type="hidden" name="site_folders" value="[]">
         <div class="chips"></div>
         <div class="folder-add-row">
-          <input id="new-folder" placeholder="Comptabilite  —  ou  Comptabilite/2026 pour un sous-dossier"
+          <input id="new-folder" placeholder="Comptabilite  ·  ou  Comptabilite/2026 pour un sous-dossier"
                  onkeydown="if (event.key === 'Enter') { event.preventDefault(); addSiteFolder(); }">
           <button type="button" class="btn" onclick="addSiteFolder()">+ Ajouter</button>
         </div>
@@ -280,9 +312,9 @@
     <div id="site-existing" class="hidden mt">
       <label for="existing_site_id">Site existant</label>
       <select id="existing_site_id" name="existing_site_id" onchange="loadFolders(this.value)">
-        <option value="">— Choisir —</option>
+        <option value="">- Choisir -</option>
         {% for s in sites %}
-          <option value="{{ s.id }}">{{ s.displayName or s.name }} — {{ s.webUrl }}{% if s.pending_index %}  (ajoute via EZ365){% endif %}</option>
+          <option value="{{ s.id }}">{{ s.displayName or s.name }} · {{ s.webUrl }}{% if s.pending_index %}  (ajoute via EZ365){% endif %}</option>
         {% endfor %}
       </select>
       <p id="folder-status" class="muted small mt"></p>
@@ -304,7 +336,7 @@
 
     <div class="shortcut-cell common-block" id="common-shortcuts">
       <label>Raccourcis communs
-        <span class="muted small">— poses sur toutes les fiches</span>
+        <span class="muted small">- poses sur toutes les fiches</span>
       </label>
       <input type="hidden" name="common_shortcuts" value="[]">
       <div class="chips"></div>
@@ -358,14 +390,14 @@
                 {% for d in domains %}
                   <option value="{{ d }}">@{{ d }}</option>
                 {% endfor %}
-                {% if not domains %}<option value="">@—</option>{% endif %}
+                {% if not domains %}<option value="">@-</option>{% endif %}
               </select>
             </div>
           </div>
           <div>
             <label>Licence</label>
             <select name="user_sku" class="sku-select">
-              <option value="none">— aucune licence —</option>
+              <option value="none">- aucune licence -</option>
               {% for s in skus %}
                 <option value="{{ s.skuId }}|{{ s.skuPartNumber }}" {% if s.available == 0 %}disabled{% endif %}>
                   {{ s.skuPartNumber }} ({{ s.available }} dispo.)
@@ -407,7 +439,7 @@
             <input type="checkbox" {% if vault_ready %}checked{% else %}disabled{% endif %}
                    onchange="syncVault(this)">
             Deposer l'identifiant dans Bitwarden
-            {% if not vault_ready %}<span class="muted small">— coffre indisponible</span>{% endif %}
+            {% if not vault_ready %}<span class="muted small">- coffre indisponible</span>{% endif %}
           </label>
           <div class="vault-name-field">
             <label>Nom de l'entree</label>

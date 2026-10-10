@@ -1,0 +1,5 @@
+{# Icones Fluent UI System Icons (Microsoft, licence MIT), servies en sprite.
+   Les noms disponibles sont les identifiants « ic-… » de /static/icons.svg. #}
+{% macro icon(name, extra="") -%}
+<svg class="icon {{ extra }}" aria-hidden="true" focusable="false"><use href="/static/icons.svg?v={{ asset_v }}#ic-{{ name }}"></use></svg>
+{%- endmacro %}

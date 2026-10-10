@@ -321,7 +321,7 @@ async function resolveSiteUrl() {
     const select = document.getElementById("existing_site_id");
     let option = Array.from(select.options).find(function (o) { return o.value === data.id; });
     if (!option) {
-      option = new Option((data.displayName || "Site") + " — " + (data.webUrl || ""), data.id);
+      option = new Option((data.displayName || "Site") + " · " + (data.webUrl || ""), data.id);
       select.appendChild(option);
     }
     select.value = data.id;
@@ -402,7 +402,7 @@ async function runUserSearch(term) {
       return already.indexOf((u.userPrincipalName || "").toLowerCase()) === -1;
     });
     status.textContent = shown.length
-      ? shown.length + " compte(s) — cliquez pour ajouter."
+      ? shown.length + " compte(s), cliquez pour ajouter."
       : "Aucun compte a proposer.";
 
     shown.forEach(function (user) {
@@ -515,7 +515,7 @@ function addExistingUser(user) {
   const skuBlock = document.createElement("div");
   const skuLabel = document.createElement("label");
   skuLabel.textContent = "Licence a ajouter";
-  const skuSelect = skuOptions("— ne rien changer —");
+  const skuSelect = skuOptions("- ne rien changer -");
   skuSelect.name = "existing_sku";
   skuBlock.appendChild(skuLabel);
   skuBlock.appendChild(skuSelect);
@@ -636,12 +636,12 @@ function removeRow(button) {
 
 async function reloadCollections(orgId) {
   const select = document.getElementById("vault_collection_id");
-  select.innerHTML = '<option value="">— Chargement… —</option>';
+  select.innerHTML = '<option value="">Chargement…</option>';
   try {
     const resp = await fetch("/api/vault/collections?organization_id=" + encodeURIComponent(orgId),
       { headers: { Accept: "application/json" } });
     const data = await resp.json();
-    select.innerHTML = '<option value="">— Aucune —</option>';
+    select.innerHTML = '<option value="">Aucune</option>';
     (data.collections || []).forEach(function (c) {
       const opt = document.createElement("option");
       opt.value = c.id;
@@ -649,7 +649,7 @@ async function reloadCollections(orgId) {
       select.appendChild(opt);
     });
   } catch (err) {
-    select.innerHTML = '<option value="">— Erreur de chargement —</option>';
+    select.innerHTML = '<option value="">Erreur de chargement</option>';
   }
 }
 

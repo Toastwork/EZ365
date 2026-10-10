@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Diagnostic OneDrive — {{ app_name }}{% endblock %}
+{% block title %}Diagnostic OneDrive · {{ app_name }}{% endblock %}
 {% block content %}
 
 <div class="page-head">
@@ -7,7 +7,7 @@
     <h1>Diagnostic OneDrive</h1>
     <p class="muted small">
       <a href="/tenants/{{ tenant.id }}">{{ tenant.display_name or tenant.id }}</a>
-      — rejoue, pour un seul compte, les appels d'un provisionnement et affiche
+      : il rejoue, pour un seul compte, les appels d'un provisionnement et affiche
       la reponse brute de Microsoft a chaque etape.
     </p>
   </div>

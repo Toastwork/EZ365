@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Traitement — {{ app_name }}{% endblock %}
+{% import "partials/icons.html" as ic %}
+{% block title %}Traitement · {{ app_name }}{% endblock %}
 {% block content %}
 
 <div class="page-head">
@@ -11,17 +12,20 @@
     </p>
   </div>
   <div class="head-actions">
-    <span id="job-status" class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(job.status,'warn') }}">{{ job.status }}</span>
+    <span id="job-status" class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(job.status,'warn') }}">
+      {{ ic.icon({'done':'check','error':'error'}.get(job.status,'sync')) }}{{ job.status }}
+    </span>
     {% if running %}
     <form method="post" action="/jobs/{{ job.id }}/cancel">
-      <button class="btn btn-danger" type="submit">Interrompre</button>
+      <button class="btn btn-danger" type="submit">{{ ic.icon("error") }} Interrompre</button>
     </form>
     {% endif %}
   </div>
 </div>
 
 <div class="card">
-  <h2>Journal</h2>
+  <div class="card-head">{{ ic.icon("list") }}<h2>Journal</h2></div>
+  {% if running %}<div class="progress" aria-hidden="true"><span></span></div>{% endif %}
   <ol class="log" id="log" data-job="{{ job.id }}" data-running="{{ 1 if running else 0 }}">
     {% for e in events %}
       <li class="log-{{ e.level }}" data-id="{{ e.id }}">

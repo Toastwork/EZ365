@@ -451,6 +451,22 @@ les nouveaux comptes.
 
 ---
 
+## Interface
+
+L'habillage reprend le langage **Fluent 2** des centres d'administration
+Microsoft : bandeau de 48 px, navigation laterale repliable, rampe
+typographique Segoe UI, rayons de 4 px (controles) et 8 px (cartes), ombres
+et courbes d'animation des tokens Fluent. Clair par defaut, sombre au clic
+sur le bouton du bandeau (choix memorise par le navigateur). Les animations
+se desactivent sous `prefers-reduced-motion`.
+
+Les icones viennent de **Fluent UI System Icons** (Microsoft, licence MIT),
+vendues telles quelles dans `app/static/icons.svg` et servies en sprite ;
+aucune n'est redessinee a la main. Pour en ajouter une, reprendre le fichier
+SVG du depot officiel et ajouter un `<symbol id="ic-...">` au sprite.
+
+---
+
 ## Developpement local
 
 ```bash

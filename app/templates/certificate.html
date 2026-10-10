@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Certificat SharePoint — {{ app_name }}{% endblock %}
+{% block title %}Certificat SharePoint · {{ app_name }}{% endblock %}
 {% block content %}
 
 <div class="page-head">
@@ -27,7 +27,7 @@
           {% if cert.days_left < 30 %}
             <span class="pill pill-ko">expire dans {{ cert.days_left }} jour(s)</span>
           {% else %}
-            <span class="muted small">— {{ cert.days_left }} jours restants</span>
+            <span class="muted small">· {{ cert.days_left }} jours restants</span>
           {% endif %}
         </td></tr>
     <tr><th>Origine</th>
@@ -82,7 +82,7 @@
 {% endif %}
 
 <div class="card">
-  <h2>Mise en place — une seule fois</h2>
+  <h2>Mise en place, une seule fois</h2>
   {% if portal %}
   <div class="portal-links">
     <span class="muted small">Acces direct (connecte sur le tenant qui heberge EZ365) :</span>

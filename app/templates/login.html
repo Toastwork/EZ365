@@ -1,9 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Connexion — {{ app_name }}{% endblock %}
+{% import "partials/icons.html" as ic %}
+{% block title %}Connexion · {{ app_name }}{% endblock %}
 {% block content %}
 <div class="login-wrap">
   <form class="card login" method="post" action="/login">
-    <h1>Connexion</h1>
+    <div class="card-head">{{ ic.icon("person") }}<h1>Connexion</h1></div>
     <p class="muted">
       {% if auth_mode == 'ldap' %}
         Compte Active Directory

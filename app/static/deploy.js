@@ -24,6 +24,21 @@ function filterList(selector, term) {
   });
 }
 
+function sprite(name, cls) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "icon " + (cls || ""));
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", "/static/icons.svg#ic-" + name);
+  svg.appendChild(use);
+  return svg;
+}
+
+function initials(name) {
+  return (name || "?").trim().split(/\s+/).slice(0, 2)
+    .map(function (part) { return part[0] || ""; }).join("").toUpperCase();
+}
+
 function folderLabel(path) {
   return path ? path : "Bibliotheque entiere";
 }
@@ -36,6 +51,9 @@ function pickSite(radio) {
     item.classList.toggle("selected", item.contains(radio));
   });
   deployForm().querySelector("[name=site_name]").value = radio.dataset.name || "";
+  const info = document.getElementById("site-info");
+  if (info) { info.textContent = radio.dataset.name || "site choisi"; }
+  document.getElementById("badge-1").classList.add("done");
   loadSiteFolders(radio.value);
 }
 
@@ -119,20 +137,21 @@ function renderFolderTree() {
   const entries = [{ name: "Bibliotheque entiere", path: "", level: 0 }].concat(deploy.folders);
   entries.forEach(function (folder) {
     const row = document.createElement("label");
-    row.className = "check tree-item";
-    row.style.paddingLeft = (folder.level * 1.3) + "rem";
+    row.className = "tree-item";
+    row.style.paddingLeft = (0.5 + folder.level * 1.3) + "rem";
     const box = document.createElement("input");
     box.type = "checkbox";
     box.value = folder.path;
     box.onchange = function () {
       const list = massFolders().filter(function (p) { return p !== folder.path; });
       if (box.checked) { list.push(folder.path); }
+      row.classList.toggle("checked", box.checked);
       setMassFolders(list);
     };
     const name = document.createElement("span");
     name.textContent = folder.name;
-    if (!folder.path) { name.className = "muted"; }
     row.appendChild(box);
+    row.appendChild(sprite(folder.path ? "folder" : "globe"));
     row.appendChild(name);
     tree.appendChild(row);
   });
@@ -179,20 +198,23 @@ function renderUsers() {
     ex.className = "check";
     ex.innerHTML = '<input type="checkbox" name="exclude_upn" onchange="refreshDeployInfo()"><span></span>';
     ex.querySelector("input").value = upn;
-    ex.querySelector("span").textContent = name + " — " + upn;
+    ex.querySelector("span").textContent = name + " · " + upn;
     excludes.appendChild(ex);
 
     const row = document.createElement("div");
     row.className = "user-row";
     row.dataset.upn = upn;
     row.innerHTML =
-      '<div class="user-id"><strong></strong><span class="muted mono small"></span>' +
-      '<span class="muted small user-mass"></span></div>' +
+      '<div class="user-id"><span class="avatar"></span>' +
+      '<span class="user-id-text"><strong></strong>' +
+      '<span class="muted mono small"></span>' +
+      '<span class="user-mass"></span></span></div>' +
       '<div class="user-folders">' +
       '<input type="hidden" name="deploy_upn"><input type="hidden" name="deploy_name">' +
       '<input type="hidden" name="deploy_folders" value="[]">' +
       '<div class="chips"></div>' +
       '<select class="deploy-folder-select" onchange="addUserFolder(this)"></select></div>';
+    row.querySelector(".avatar").textContent = initials(name);
     row.querySelector("strong").textContent = name;
     row.querySelector(".user-id .mono").textContent = upn;
     row.querySelector("[name=deploy_upn]").value = upn;
@@ -303,7 +325,35 @@ function refreshDeployInfo() {
       : "";
   });
   const custom = customisedRows().length;
-  document.getElementById("per-user-info").textContent = custom ? custom + " personnalise(s)" : "";
+  document.getElementById("per-user-info").textContent =
+    custom ? custom + " personnalise(s)" : "facultatif";
+
+  document.getElementById("badge-1").classList.toggle("done", siteChosen());
+  document.getElementById("badge-2").classList.toggle("done", mass.length > 0);
+  document.getElementById("badge-3").classList.toggle("done", custom > 0);
+
+  // Barre d'action : ce qui partira si on clique maintenant.
+  const main = document.getElementById("deploy-recap-main");
+  const sub = document.getElementById("deploy-recap-sub");
+  if (!main || !sub) { return; }
+  const touched = new Set(customisedRows().map(function (row) { return row.dataset.upn; }));
+  if (mass.length) {
+    document.querySelectorAll("#user-rows .user-row").forEach(function (row) {
+      if (excluded.indexOf(row.dataset.upn) === -1) { touched.add(row.dataset.upn); }
+    });
+  }
+  if (!siteChosen()) {
+    main.textContent = "Rien a deployer pour l'instant";
+    sub.textContent = "Choisissez un site, puis au moins un dossier.";
+  } else if (!touched.size) {
+    main.textContent = "Aucun dossier choisi";
+    sub.textContent = "Cochez un dossier pour tous, ou ajoutez-en a un utilisateur.";
+  } else {
+    main.textContent = touched.size + " utilisateur(s) concerne(s)";
+    sub.textContent = (mass.length ? mass.length + " dossier(s) pour tous" : "aucun dossier commun")
+      + (custom ? ", " + custom + " ajout(s) individuel(s)" : "")
+      + " sur " + (deployForm().querySelector("[name=site_name]").value || "le site choisi");
+  }
 }
 
 function confirmDeploy(form) {
