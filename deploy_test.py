@@ -128,6 +128,47 @@ async def scenario():
 asyncio.run(scenario())
 provisioning.run_provisioning = real_run
 
+# --- acces a un site sans groupe Microsoft 365 --------------------------------------
+from app.msgraph import sharepoint as sp  # noqa: E402
+
+check("racine REST d'un site",
+      sp.site_rest_root("https://c.sharepoint.com/sites/FSPPMA/")
+      == ("c.sharepoint.com", "https://c.sharepoint.com/sites/FSPPMA"),
+      sp.site_rest_root("https://c.sharepoint.com/sites/FSPPMA/"))
+check("adresse vide refusee", sp.site_rest_root("") is None)
+
+
+async def access_scenarios():
+    entries = [
+        {"upn": "a@c.fr", "id": "A", "site_access": "non gere", "errors": []},
+        {"upn": "b@c.fr", "id": "B", "site_access": "non gere", "errors": []},
+        {"upn": "c@c.fr", "id": "C", "site_access": "deja membre", "errors": []},
+    ]
+    vus = {}
+
+    async def fake_grant(graph, web_url, upns):
+        vus["url"], vus["upns"] = web_url, list(upns)
+        return ["a@c.fr"], {"b@c.fr": "HTTP 403 refus"}
+
+    real = sp.grant_site_access
+    sp.grant_site_access = fake_grant
+    try:
+        await provisioning.grant_site_access(
+            Ctx(), FakeGraph("t1"), entries, {"webUrl": "https://c.sharepoint.com/sites/X"})
+    finally:
+        sp.grant_site_access = real
+
+    check("seuls les comptes sans acces sont traites", vus["upns"] == ["a@c.fr", "b@c.fr"], vus)
+    check("acces accorde note dans le recapitulatif", entries[0]["site_access"] == "acces accorde")
+    check("refus note avec sa raison",
+          entries[1]["site_access"] == "echec"
+          and any("403" in e for e in entries[1]["errors"]), entries[1])
+    check("compte deja membre laisse tel quel", entries[2]["site_access"] == "deja membre")
+
+
+asyncio.run(access_scenarios())
+
+
 # --- formulaire et page -------------------------------------------------------------
 shutil.rmtree(".localdata", ignore_errors=True)
 from fastapi.testclient import TestClient
@@ -171,7 +212,15 @@ with TestClient(app) as client:
         {"upn": "bob@c.fr", "display_name": "Bob", "folders": ["Compta"]}], spec["per_user"])
     check("attente bornee", spec["onedrive_wait"] == 600, spec["onedrive_wait"])
     check("site transmis", spec["site"] == {"mode": "existing", "site_id": "S",
-                                            "display_name": "Documents"}, spec["site"])
+                                            "display_name": "Documents",
+                                            "grant_access": True}, spec["site"])
+
+    launched.clear()
+    client.post("/tenants/t1/deploy", data={
+        "site_id": "S", "mass_folders": '["Commun"]', "grant_access": "0"},
+        follow_redirects=False)
+    check("acces au site refusable",
+          jobs.job_payload(launched[0])["site"]["grant_access"] is False)
 
 print()
 print("ECHECS :", fails if fails else "aucun")

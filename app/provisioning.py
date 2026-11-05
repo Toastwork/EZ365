@@ -443,6 +443,47 @@ async def _process_user(
         entry["site_access"] = "non gere"
 
 
+async def grant_site_access(
+    ctx: JobContext, graph: GraphClient, results: list[dict], site: dict
+) -> None:
+    """Donne l'acces au site aux comptes traites, quand il n'a pas de groupe.
+
+    Un site de communication (ou un site d'equipe a l'alias renomme) n'a pas de
+    groupe Microsoft 365 : sans cette etape, les raccourcis pointeraient vers un
+    espace que personne ne peut ouvrir.
+    """
+    cibles = [r for r in results if r.get("id") and r.get("site_access") == "non gere"]
+    if not cibles:
+        return
+    upns = [r["upn"] for r in cibles]
+    ctx.info("sharepoint", f"Ajout de {len(upns)} compte(s) aux membres du site…")
+    try:
+        ajoutes, echecs = await bounded(
+            sharepoint.grant_site_access(graph, site.get("webUrl") or "", upns),
+            get_settings().step_timeout,
+            "Acces au site",
+        )
+    except (StepTimeout, GraphError, ConsentError, httpx.HTTPError) as exc:
+        ajoutes, echecs = [], {u: str(exc) for u in upns}
+
+    for entry in cibles:
+        upn = entry["upn"]
+        if upn in ajoutes:
+            entry["site_access"] = "acces accorde"
+        else:
+            entry["site_access"] = "echec"
+            entry["errors"].append(f"acces au site : {echecs.get(upn, 'refuse')}")
+    if ajoutes:
+        ctx.success("sharepoint", f"{len(ajoutes)} compte(s) ajoute(s) aux membres du site.")
+    if echecs:
+        ctx.error(
+            "sharepoint",
+            f"Acces au site refuse pour {len(echecs)} compte(s) : a accorder depuis "
+            "SharePoint. Premiere raison : " + next(iter(echecs.values())),
+            {"echecs": echecs},
+        )
+
+
 # ---------------------------------------------------------------------------
 # Etape 3 : OneDrive
 # ---------------------------------------------------------------------------
@@ -974,6 +1015,10 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
             await create_site_folders(ctx, graph, site, site_spec.get("folders") or [])
 
         results = await create_users(ctx, graph, user_specs, site)
+
+        # Site sans groupe : les droits se posent cote SharePoint, pas Graph.
+        if site and not site.get("groupId") and site_spec.get("grant_access", True):
+            await grant_site_access(ctx, graph, results, site)
 
         await provision_onedrives(
             ctx, graph, results,

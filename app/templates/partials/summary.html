@@ -34,6 +34,7 @@
             {% else %}<span class="pill pill-ko">echec</span>{% endif %}</td>
         <td class="small">
           {% if u.site_access == 'echec' %}<span class="pill pill-ko">echec</span>
+          {% elif u.site_access == 'acces accorde' %}<span class="pill pill-ok">acces accorde</span>
           {% elif u.site_access == 'non gere' %}<span class="pill pill-warn">a accorder</span>
           {% elif u.site_access %}<span class="pill pill-ok">{{ u.site_access }}</span>
           {% else %}-{% endif %}

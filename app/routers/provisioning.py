@@ -389,7 +389,8 @@ async def start_deployment(
 
     spec = {
         "site": {"mode": "existing", "site_id": site_id,
-                 "display_name": (form.get("site_name") or "").strip()},
+                 "display_name": (form.get("site_name") or "").strip(),
+                 "grant_access": form.get("grant_access", "1") == "1"},
         "mass_folders": mass_folders,
         "excluded": excluded,
         "per_user": per_user,

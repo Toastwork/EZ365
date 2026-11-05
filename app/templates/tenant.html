@@ -158,6 +158,15 @@
     <div class="head-actions">
       <details class="deploy-options">
         <summary>Options</summary>
+        <label class="check mt">
+          <input type="hidden" name="grant_access" value="1" data-default="1">
+          <input type="checkbox" checked onchange="syncFlag(this)">
+          Donner l'acces au site aux utilisateurs traites
+        </label>
+        <p class="muted small">
+          Ne sert que pour un site sans groupe Microsoft 365 : ils sont alors
+          ajoutes aux membres du site. Sinon l'acces passe par le groupe.
+        </p>
         <label for="deploy_onedrive_wait" class="mt">Attente maximale d'un OneDrive a creer</label>
         <select id="deploy_onedrive_wait" name="onedrive_wait">
           <option value="0">Ne pas attendre</option>

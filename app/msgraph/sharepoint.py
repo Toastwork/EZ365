@@ -17,7 +17,7 @@ import asyncio
 import logging
 import re
 import unicodedata
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 import httpx
 
@@ -317,6 +317,69 @@ async def add_shortcut(
         "L'API de raccourci OneDrive n'est pas toujours disponible en app-only : "
         "le site reste accessible, seul le raccourci doit etre ajoute manuellement."
     )
+
+
+VERBOSE = "application/json;odata=verbose"
+
+
+def site_rest_root(web_url: str) -> tuple[str, str] | None:
+    """(hote, racine REST) d'un site, a partir de son adresse web."""
+    parsed = urlparse(web_url or "")
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return parsed.netloc, f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}"
+
+
+async def grant_site_access(
+    graph: GraphClient, web_url: str, upns: list[str]
+) -> tuple[list[str], dict[str, str]]:
+    """Ajoute des comptes aux membres d'un site, via l'API REST SharePoint.
+
+    C'est la seule voie pour un site sans groupe Microsoft 365 (site de
+    communication, ou site d'equipe dont l'alias a ete renomme) : Graph ne sait
+    pas gerer les groupes SharePoint. Renvoie (comptes ajoutes, echecs).
+    """
+    target = site_rest_root(web_url)
+    if not target or not upns:
+        return [], {u: "adresse du site inconnue" for u in upns}
+    host, root = target
+    token = await oauth.get_app_token(graph.tenant_id, scope=f"https://{host}/.default")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": VERBOSE,
+        "Content-Type": VERBOSE,
+    }
+
+    ajoutes: list[str] = []
+    echecs: dict[str, str] = {}
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{root}/_api/web/AssociatedMemberGroup", headers=headers)
+        if resp.status_code >= 400:
+            raison = f"groupe « Membres » illisible (HTTP {resp.status_code})"
+            return [], {u: raison for u in upns}
+        try:
+            group_id = resp.json()["d"]["Id"]
+        except (ValueError, KeyError, TypeError):
+            return [], {u: "reponse inattendue de SharePoint" for u in upns}
+
+        for upn in upns:
+            payload = {
+                "__metadata": {"type": "SP.User"},
+                "LoginName": f"i:0#.f|membership|{upn}",
+            }
+            try:
+                added = await client.post(
+                    f"{root}/_api/web/sitegroups({group_id})/users",
+                    json=payload, headers=headers,
+                )
+            except httpx.HTTPError as exc:
+                echecs[upn] = str(exc)
+                continue
+            if added.status_code < 400:
+                ajoutes.append(upn)
+            else:
+                echecs[upn] = f"HTTP {added.status_code} {added.text[:160]}"
+    return ajoutes, echecs
 
 
 ENQUEUE_PATH = (

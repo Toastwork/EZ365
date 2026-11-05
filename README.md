@@ -303,6 +303,19 @@ Le recapitulatif porte une colonne « Acces site » (`membre ajoute`, `deja
 membre`, `a accorder`, `echec`). Apres un ajout, SharePoint peut mettre
 plusieurs minutes a refleter le nouveau droit.
 
+### Acces a un site sans groupe Microsoft 365
+
+Un site de communication, ou un site d'equipe dont l'alias a ete renomme, n'a
+pas de groupe : Graph ne peut y ajouter personne. EZ365 ajoute alors les
+comptes traites aux **membres du site** par l'API REST SharePoint (permission
+`Sites.FullControl.All`). Sans cela, les raccourcis pointeraient vers un
+espace que personne ne peut ouvrir.
+
+La case **« Donner l'acces au site aux utilisateurs traites »**, dans les
+options du deploiement, permet de s'en dispenser : les droits restent alors a
+accorder depuis SharePoint. Pour un site d'equipe, l'acces passe par le groupe
+et cette etape ne joue pas.
+
 ### Dossiers d'un nouveau site
 
 Lors de la creation d'un site (equipe ou communication), un bloc « Dossiers a
