@@ -15,6 +15,11 @@
     <span id="job-status" class="pill pill-{{ {'done':'ok','error':'ko','running':'warn'}.get(job.status,'warn') }}">
       {{ ic.icon({'done':'check','error':'error'}.get(job.status,'sync')) }}{{ job.status }}
     </span>
+    {% if not running and tenant and retryable %}
+    <form method="post" action="/tenants/{{ tenant.id }}/jobs/{{ job.id }}/retry">
+      <button class="btn btn-primary" type="submit">{{ ic.icon("sync") }} Reprendre les raccourcis manquants</button>
+    </form>
+    {% endif %}
     {% if running %}
     <form method="post" action="/jobs/{{ job.id }}/cancel">
       <button class="btn btn-danger" type="submit">{{ ic.icon("error") }} Interrompre</button>

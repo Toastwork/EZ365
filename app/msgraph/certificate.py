@@ -2,7 +2,7 @@
 
 SharePoint Online refuse les jetons applicatifs obtenus avec un secret client
 (« Unsupported app only token ») : il exige un jeton demande avec une
-assertion signee par un certificat. Or deux fonctions en dependent — la
+assertion signee par un certificat. Or deux fonctions en dependent : la
 creation des OneDrive (CreatePersonalSiteEnqueueBulk) et celle des sites de
 communication.
 

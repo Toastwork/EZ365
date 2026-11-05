@@ -14,7 +14,7 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 def _fr_datetime(value: str | None) -> str:
     if not value:
-        return "—"
+        return "-"
     try:
         dt = datetime.fromisoformat(value)
     except ValueError:

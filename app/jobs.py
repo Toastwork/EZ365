@@ -43,7 +43,7 @@ class JobContext:
         )
         log.log(
             {"error": logging.ERROR, "warn": logging.WARNING}.get(level, logging.INFO),
-            "[job %s] %s — %s", self.job_id, step, message,
+            "[job %s] %s : %s", self.job_id, step, message,
         )
 
     def info(self, step: str, message: str, detail: Any = None) -> None:

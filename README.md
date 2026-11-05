@@ -253,6 +253,31 @@ declenche pas toujours la creation. Un OneDrive pas pret a la fin de l'attente
 finit de se creer seul : un nouveau passage en « utilisateur existant » pose
 alors les raccourcis manquants.
 
+### Quand SharePoint refuse la creation des OneDrive
+
+Certains tenants n'acceptent pas la creation des OneDrive en mode application,
+quelles que soient les permissions accordees : le jeton porte bien
+`Sites.FullControl.All` et `User.ReadWrite.All`, et l'API de profils repond
+403. Seule l'identite d'un administrateur passe.
+
+Le recapitulatif affiche alors la commande a jouer, deja remplie avec les
+adresses concernees et l'hote d'administration du client :
+
+```powershell
+Connect-SPOService -Url https://<client>-admin.sharepoint.com
+Request-SPOPersonalSite -UserEmails @("prenom.nom@client.fr", ...) -NoWait
+```
+
+Elle demande une connexion administrateur interactive et le module *SharePoint
+Online Management Shell*. Quelques minutes plus tard, les OneDrive existent.
+
+### Reprendre un traitement
+
+Le bouton **« Reprendre les raccourcis manquants »**, sur la page d'un
+traitement termine, relance le meme deploiement pour les seuls comptes dont
+les raccourcis n'ont pas pu etre poses (OneDrive absent, delai depasse). Les
+raccourcis deja en place sont reconnus et ne sont jamais recrees.
+
 ### Diagnostic OneDrive
 
 Bouton **« Diagnostic OneDrive »** sur la fiche d'un client : pour un compte

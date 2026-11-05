@@ -129,7 +129,7 @@ async def ms_callback(
     client qui atterrit ici. La securite repose sur le `state` a usage unique.
     """
     if error:
-        log.warning("Consentement refuse : %s — %s", error, error_description)
+        log.warning("Consentement refuse : %s : %s", error, error_description)
         return render(
             request,
             "consent_result.html",

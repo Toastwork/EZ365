@@ -744,3 +744,13 @@ select.upn-domain { width: auto; max-width: 45%; border-left: none;
   .deploy-actions { padding: 12px 16px; }
   .deploy > .deploy-intro { padding: 16px 16px 0; }
 }
+
+/* ---------- commande de repli (OneDrive refuses) ---------- */
+.fallback { margin: 12px 0 20px; padding: 12px 16px; border-radius: var(--r-md);
+  background: var(--warn-bg); border: 1px solid var(--warn-line); border-left-width: 4px; }
+.fallback-head { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.fallback p { margin: 4px 0 8px; }
+.fallback-cmd { margin: 0; padding: 10px 12px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--border);
+  font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px;
+  white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow: auto; }

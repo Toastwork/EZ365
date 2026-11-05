@@ -80,3 +80,24 @@
 
   tick();
 })();
+
+
+// Commande de repli : copie dans le presse-papiers depuis le recapitulatif.
+function copyFallback(button) {
+  const bloc = button.closest(".fallback").querySelector(".fallback-cmd");
+  const texte = bloc.textContent;
+  const fini = function () { button.textContent = "Copie"; };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(texte).then(fini, function () { select(bloc); });
+  } else {
+    select(bloc);
+  }
+  function select(node) {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    button.textContent = "Selectionne, Ctrl+C";
+  }
+}

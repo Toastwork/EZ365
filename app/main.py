@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     jobs.mark_orphans()
     oauth.purge_stale_states()
     log.info(
-        "EZ365 %s demarre — auth=%s, coffre=%s, TLS=%s, donnees=%s",
+        "EZ365 %s demarre : auth=%s, coffre=%s, TLS=%s, donnees=%s",
         settings.build_ref,
         settings.auth_mode,
         "actif" if settings.vault_enabled else "inactif",

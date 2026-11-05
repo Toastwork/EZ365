@@ -376,7 +376,7 @@ class GraphClient:
                     },
                 )
             except GraphError as exc:
-                # 409 : cree entre-temps (traitements concurrents) — on relit.
+                # 409 : cree entre-temps (traitements concurrents) : on relit.
                 if exc.status != 409:
                     raise
                 item = await self.drive_item(drive_id, current)

@@ -169,6 +169,35 @@ async def access_scenarios():
 asyncio.run(access_scenarios())
 
 
+# --- commande de repli PowerShell ---------------------------------------------------
+cmd = provisioning.powershell_provisioning("c-admin.sharepoint.com", ["b@c.fr", "a@c.fr"])
+check("commande : connexion au centre d'administration",
+      "Connect-SPOService -Url https://c-admin.sharepoint.com" in cmd, cmd)
+check("commande : adresses triees et citees",
+      'Request-SPOPersonalSite -UserEmails @("a@c.fr","b@c.fr") -NoWait' in cmd, cmd)
+check("commande vide sans compte", provisioning.powershell_provisioning("c-admin", []) == "")
+
+
+# --- comptes restes sans raccourci --------------------------------------------------
+from app.routers.provisioning import unfinished_users  # noqa: E402
+
+resume = {"users": [
+    {"upn": "a@c.fr", "display_name": "A", "shortcut_folders": ["Commun", "RH"],
+     "shortcuts": [{"folder": "Commun", "status": "ajoute"}]},
+    {"upn": "b@c.fr", "display_name": "B", "shortcut_folders": [""],
+     "shortcuts": [{"folder": "(racine)", "status": "deja present"}]},
+    {"upn": "c@c.fr", "display_name": "C", "shortcut_folders": ["Direction"],
+     "shortcuts": [{"folder": "Direction", "status": "OneDrive absent"}]},
+    {"upn": "d@c.fr", "display_name": "D", "shortcut_folders": [], "shortcuts": []},
+]}
+reste = unfinished_users(resume)
+check("reprise : seuls les dossiers manquants",
+      reste == [{"upn": "a@c.fr", "display_name": "A", "folders": ["RH"]},
+                {"upn": "c@c.fr", "display_name": "C", "folders": ["Direction"]}], reste)
+check("reprise : rien a faire sur un traitement complet",
+      unfinished_users({"users": [resume["users"][1], resume["users"][3]]}) == [])
+
+
 # --- formulaire et page -------------------------------------------------------------
 shutil.rmtree(".localdata", ignore_errors=True)
 from fastapi.testclient import TestClient
@@ -221,6 +250,34 @@ with TestClient(app) as client:
         follow_redirects=False)
     check("acces au site refusable",
           jobs.job_payload(launched[0])["site"]["grant_access"] is False)
+
+    # reprise d'un traitement : nouveau job pour les seuls comptes restants
+    launched.clear()
+    job_id = jobs.create_job("t1", "deploiement de raccourcis", "testeur", {
+        "site": {"mode": "existing", "site_id": "S", "display_name": "Docs"},
+        "onedrive_wait": 60})
+    jobs.set_summary(job_id, resume)
+    r = client.post(f"/tenants/t1/jobs/{job_id}/retry", follow_redirects=False)
+    check("reprise lancee", "/jobs/" in r.headers.get("location", "") and len(launched) == 1,
+          r.headers.get("location"))
+    repris = jobs.job_payload(launched[0])
+    check("reprise : site et comptes repris",
+          repris["site"]["site_id"] == "S"
+          and [u["upn"] for u in repris["per_user"]] == ["a@c.fr", "c@c.fr"], repris)
+    check("reprise : aucun dossier commun rejoue", repris["mass_folders"] == [])
+
+    launched.clear()
+    complet = jobs.create_job("t1", "deploiement de raccourcis", "testeur", {"site": {}})
+    jobs.set_summary(complet, {"users": [resume["users"][1]]})
+    r = client.post(f"/tenants/t1/jobs/{complet}/retry", follow_redirects=False)
+    check("reprise inutile : pas de nouveau traitement",
+          r.headers.get("location") == f"/jobs/{complet}" and not launched, r.headers.get("location"))
+
+    db.execute("UPDATE jobs SET status = 'done' WHERE id = ?", (job_id,))
+    page = client.get(f"/jobs/{job_id}").text
+    check("bouton de reprise sur la page du traitement",
+          f"/tenants/t1/jobs/{job_id}/retry" in page)
+
 
 print()
 print("ECHECS :", fails if fails else "aucun")

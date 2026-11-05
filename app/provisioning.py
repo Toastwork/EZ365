@@ -326,7 +326,7 @@ async def _after_user_timeout(
 
     Le plus delicat : la creation a pu aboutir cote Microsoft sans que la
     reponse nous parvienne. Le compte existe alors avec un mot de passe que
-    nous sommes seuls a connaitre — on le verifie pour ne pas le perdre.
+    nous sommes seuls a connaitre : on le verifie pour ne pas le perdre.
     """
     entry["errors"].append(str(exc))
     if not entry.get("id") and not spec["existing_only"]:
@@ -342,11 +342,11 @@ async def _after_user_timeout(
         entry["password_shown"] = True
         ctx.warn(
             "utilisateurs",
-            f"{exc} — le compte {spec['upn']} a bien ete cree, mais les etapes "
+            f"{exc} : le compte {spec['upn']} a bien ete cree, mais les etapes "
             "suivantes (licence, acces au site) sont a verifier. Compte suivant.",
         )
     else:
-        ctx.error("utilisateurs", f"{exc} — on passe au compte suivant.")
+        ctx.error("utilisateurs", f"{exc} : on passe au compte suivant.")
 
 
 async def _process_user(
@@ -526,8 +526,8 @@ async def provision_onedrives(
     creer seul, et un nouveau passage en « utilisateur existant » posera les
     raccourcis manquants.
     """
-    # Seuls les comptes pour lesquels l'operateur l'a demande — ou qui
-    # attendent un raccourci — passent par cette etape, la plus lente.
+    # Seuls les comptes pour lesquels l'operateur l'a demande : ou qui
+    # attendent un raccourci : passent par cette etape, la plus lente.
     targets = [r for r in results if r.get("id") and r.get("provision_onedrive")]
     if not targets:
         ctx.info("onedrive", "Aucun OneDrive a provisionner.")
@@ -734,7 +734,7 @@ async def add_shortcuts(
             except StepTimeout as exc:
                 done.append({"folder": shown, "status": "delai depasse"})
                 entry["errors"].append(f"raccourci : {exc}")
-                ctx.warn("raccourcis", f"{exc} — raccourci suivant.")
+                ctx.warn("raccourcis", f"{exc} : raccourci suivant.")
                 continue
             if not target:
                 done.append({"folder": shown, "status": "cible introuvable"})
@@ -756,7 +756,7 @@ async def add_shortcuts(
                 # La creation a pu aboutir sans que la reponse arrive.
                 done.append({"folder": shown, "status": "delai depasse"})
                 entry["errors"].append(f"raccourci : {exc} (a verifier)")
-                ctx.warn("raccourcis", f"{exc} — raccourci suivant, a verifier.")
+                ctx.warn("raccourcis", f"{exc} : raccourci suivant, a verifier.")
             except GraphError as exc:
                 # Graph reconnait un raccourci vers la meme cible meme sous un
                 # autre nom (« Documents » quand l'utilisateur l'a ajoute
@@ -817,7 +817,7 @@ async def store_in_vault(
             entry["password_shown"] = True
         ctx.error(
             "bitwarden",
-            f"Coffre indisponible : {message} — les mots de passe sont affiches "
+            f"Coffre indisponible : {message} : les mots de passe sont affiches "
             "dans le recapitulatif, a mettre au coffre manuellement.",
         )
         return
@@ -867,7 +867,7 @@ async def store_in_vault(
             entry["errors"].append(f"coffre : {exc}")
             ctx.error(
                 "bitwarden",
-                f"{exc} — verifiez le coffre avant de recreer l'entree ; le mot de "
+                f"{exc} : verifiez le coffre avant de recreer l'entree ; le mot de "
                 "passe reste affiche dans le recapitulatif. Entree suivante.",
             )
         except bitwarden.VaultError as exc:
@@ -877,7 +877,7 @@ async def store_in_vault(
             ctx.error(
                 "bitwarden",
                 f"Depot impossible pour {entry['upn']} : {exc} "
-                "— le mot de passe est affiche dans le recapitulatif, a mettre au "
+                "- le mot de passe est affiche dans le recapitulatif, a mettre au "
                 "coffre manuellement.",
             )
 
@@ -890,7 +890,7 @@ async def run_site_creation(ctx: JobContext, tenant: dict, site_spec: dict) -> d
     folders = site_spec.get("folders") or []
     ctx.info(
         "demarrage",
-        f"Creation d'un site sur {tenant.get('display_name') or tenant['id']} — "
+        f"Creation d'un site sur {tenant.get('display_name') or tenant['id']} : "
         f"{len(folders)} dossier(s) demande(s).",
     )
     async with GraphClient(tenant["id"]) as graph:
@@ -993,6 +993,34 @@ async def run_deployment(ctx: JobContext, tenant: dict, spec: dict) -> dict:
     })
 
 
+def powershell_provisioning(admin_host: str, upns: list[str]) -> str:
+    """Commande a copier quand SharePoint refuse la creation en app-only.
+
+    Sur certains tenants, l'API de profils n'accepte que l'identite d'un
+    administrateur : cette commande fait le meme travail depuis le poste de
+    l'operateur, sans qu'il ait a reconstruire la liste des adresses.
+    """
+    if not admin_host or not upns:
+        return ""
+    emails = ",".join(f'"{u}"' for u in sorted(upns))
+    return (
+        f"Connect-SPOService -Url https://{admin_host}\n"
+        f"Request-SPOPersonalSite -UserEmails @({emails}) -NoWait"
+    )
+
+
+async def onedrive_fallback_command(graph: GraphClient, results: list[dict]) -> str:
+    """Commande de repli pour les comptes dont le OneDrive a ete refuse."""
+    refuses = [r["upn"] for r in results if r.get("onedrive") == "refuse par SharePoint"]
+    if not refuses:
+        return ""
+    try:
+        hostname = await bounded(graph.sharepoint_hostname(), 20, "Hote SharePoint")
+    except (StepTimeout, GraphError, ConsentError, httpx.HTTPError):
+        return ""
+    return powershell_provisioning(sharepoint.admin_host_for(hostname), refuses)
+
+
 async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
     site_spec = spec.get("site") or {"mode": "none"}
     user_specs = spec.get("users") or []
@@ -1001,7 +1029,7 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
     wanted_shortcuts = sum(len(u.get("shortcut_folders") or []) for u in user_specs)
     ctx.info(
         "demarrage",
-        f"Tenant {tenant.get('display_name') or tenant['id']} — "
+        f"Tenant {tenant.get('display_name') or tenant['id']} : "
         f"{len(user_specs)} utilisateur(s), site : {site_spec.get('mode')}, "
         f"{wanted_shortcuts} raccourci(s) demande(s).",
     )
@@ -1043,6 +1071,15 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
 
     created = sum(1 for r in results if r["created"])
     has_errors = any(r["errors"] for r in results)
+    async with GraphClient(tenant["id"]) as graph:
+        onedrive_command = await onedrive_fallback_command(graph, results)
+    if onedrive_command:
+        ctx.warn(
+            "onedrive",
+            "Les OneDrive manquants peuvent etre crees depuis un poste "
+            "d'administration : la commande est dans le recapitulatif.",
+            {"commande": onedrive_command},
+        )
 
     # Les mots de passe ne sont conserves dans le recapitulatif que si le
     # depot au coffre a echoue : sinon Bitwarden est la seule source.
@@ -1052,6 +1089,7 @@ async def run_provisioning(ctx: JobContext, tenant: dict, spec: dict) -> dict:
 
     summary = {
         "site": site,
+        "onedrive_command": onedrive_command,
         "users": results,
         "created": created,
         "total": len(results),

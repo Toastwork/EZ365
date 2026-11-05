@@ -11,6 +11,22 @@
     {% endif %}
   </p>
 
+  {% if data.onedrive_command %}
+  <div class="fallback">
+    <div class="fallback-head">
+      <strong>OneDrive refuses par SharePoint</strong>
+      <button type="button" class="btn btn-small" onclick="copyFallback(this)">Copier la commande</button>
+    </div>
+    <p class="muted small">
+      Sur ce tenant, la creation en mode application est refusee. Lancez ceci
+      depuis Windows PowerShell avec un compte administrateur SharePoint du
+      client (module SharePoint Online Management Shell), patientez quelques
+      minutes, puis reprenez le traitement.
+    </p>
+    <pre class="fallback-cmd">{{ data.onedrive_command }}</pre>
+  </div>
+  {% endif %}
+
   {% if data.users %}
   <table class="table compact">
     <thead>

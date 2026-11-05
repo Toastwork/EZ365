@@ -412,6 +412,70 @@ async def start_deployment(
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
+def unfinished_users(summary: dict) -> list[dict]:
+    """Comptes d'un traitement dont les raccourcis n'ont pas pu etre poses.
+
+    Un raccourci deja en place n'est jamais refait : reprendre un traitement
+    revient donc a rejouer la meme demande pour les seuls comptes restants.
+    """
+    reste = []
+    for user in summary.get("users") or []:
+        folders = user.get("shortcut_folders") or []
+        poses = {
+            s.get("folder") for s in (user.get("shortcuts") or [])
+            if s.get("status") in ("ajoute", "deja present")
+        }
+        manquants = [f for f in folders if (f or "(racine)") not in poses]
+        if manquants:
+            reste.append({
+                "upn": user["upn"],
+                "display_name": user.get("display_name") or user["upn"],
+                "folders": manquants,
+            })
+    return reste
+
+
+@router.post("/tenants/{tenant_id}/jobs/{job_id}/retry")
+async def retry_job(
+    request: Request,
+    tenant_id: str,
+    job_id: str,
+    operator: Operator = Depends(current_operator),
+):
+    """Rejoue un deploiement pour les seuls comptes restes sans raccourci."""
+    tenant = get_tenant(tenant_id)
+    job = jobs.get_job(job_id)
+    if job is None or job["tenant_id"] != tenant_id:
+        raise HTTPException(status_code=404, detail="Traitement inconnu")
+
+    ancien = jobs.job_payload(job_id)
+    reste = unfinished_users(job.get("summary_data") or {})
+    if not reste:
+        flash(request, "Aucun raccourci en attente sur ce traitement.", "info")
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    spec = {
+        "site": ancien.get("site") or {},
+        "mass_folders": [],
+        "excluded": [],
+        "per_user": reste,
+        "onedrive_wait": ancien.get("onedrive_wait", provisioning.ONEDRIVE_WAIT_DEFAULT),
+    }
+    new_id = jobs.create_job(tenant_id, "reprise des raccourcis", operator.username, spec)
+    db.audit(
+        operator.username,
+        "raccourcis.repris",
+        target=tenant_id,
+        detail={"job": new_id, "depuis": job_id, "comptes": len(reste)},
+    )
+
+    async def runner(ctx: jobs.JobContext) -> dict:
+        return await provisioning.run_deployment(ctx, tenant, spec)
+
+    jobs.launch(new_id, tenant_id, operator.username, runner)
+    return RedirectResponse(f"/jobs/{new_id}", status_code=303)
+
+
 @router.get("/jobs/{job_id}")
 async def job_page(request: Request, job_id: str, operator: Operator = Depends(current_operator)):
     job = jobs.get_job(job_id)
@@ -426,6 +490,7 @@ async def job_page(request: Request, job_id: str, operator: Operator = Depends(c
             "tenant": dict(tenant) if tenant else None,
             "events": jobs.events(job_id),
             "running": job["status"] in ("pending", "running"),
+            "retryable": len(unfinished_users(job.get("summary_data") or {})),
         },
     )
 
@@ -480,7 +545,7 @@ async def list_site_folders(
     operator: Operator = Depends(current_operator),
 ):
     """Dossiers de la bibliotheque « Documents » d'un site, pour le choix
-    du raccourci — global ou par utilisateur."""
+    du raccourci : global ou par utilisateur."""
     get_tenant(tenant_id)
     try:
         async with GraphClient(tenant_id) as graph:

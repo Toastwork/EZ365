@@ -239,7 +239,7 @@ async def onedrive_diagnostic(tenant_id: str, upn: str) -> list[Step]:
                            "driveType": drive.get("driveType")}
         except GraphError as exc:
             step.ok = False
-            step.summary = f"HTTP {exc.status} {exc.code} — {exc.message}"
+            step.summary = f"HTTP {exc.status} {exc.code} : {exc.message}"
             step.detail = _graph_error(exc)
         steps.append(step)
 
@@ -279,15 +279,15 @@ async def onedrive_diagnostic(tenant_id: str, upn: str) -> list[Step]:
                 step.ok = resp.status_code < 400
                 step.detail = {"url": url, **sharepoint.describe_response(resp)}
                 step.summary = (
-                    f"HTTP {resp.status_code} — demande acceptee" if step.ok
-                    else f"HTTP {resp.status_code} — refusee par SharePoint"
+                    f"HTTP {resp.status_code} : demande acceptee" if step.ok
+                    else f"HTTP {resp.status_code} : refusee par SharePoint"
                 )
             except (oauth.ConsentError, httpx.HTTPError) as exc:
                 step.ok, step.summary = False, f"{type(exc).__name__} : {exc}"
             steps.append(step)
 
     for item in steps:
-        log.info("[diagnostic %s] %s — %s — %s", upn, item.title,
+        log.info("[diagnostic %s] %s : %s : %s", upn, item.title,
                  {True: "OK", False: "ECHEC", None: "info"}[item.ok], item.summary)
         if item.detail:
             log.info("[diagnostic %s]   %s", upn,
@@ -298,7 +298,7 @@ async def onedrive_diagnostic(tenant_id: str, upn: str) -> list[Step]:
 def as_text(tenant_id: str, upn: str, steps: list[Step]) -> str:
     """Rapport en texte brut, a copier dans un echange."""
     lines = [
-        "EZ365 — diagnostic OneDrive",
+        "EZ365 : diagnostic OneDrive",
         f"date   : {datetime.now(timezone.utc).isoformat(timespec='seconds')}",
         f"tenant : {tenant_id}",
         f"compte : {upn}",
