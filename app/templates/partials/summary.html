@@ -39,7 +39,7 @@
           {% else %}-{% endif %}
         </td>
         <td class="small">{{ u.license_names | join(', ') if u.license_names else '-' }}</td>
-        <td class="small">{{ u.onedrive }}</td>
+        <td class="small">{% if u.onedrive == "refuse par SharePoint" %}<span class="pill pill-ko">refuse par SharePoint</span>{% else %}{{ u.onedrive }}{% endif %}</td>
         <td class="small">
           {% if u.shortcuts %}
             {% for s in u.shortcuts %}

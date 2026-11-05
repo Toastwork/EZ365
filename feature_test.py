@@ -592,9 +592,22 @@ async def timeout_tests():
             await provisioning.provision_onedrives(ctx, Drives(), entries, 0)
             check("refus SharePoint signale, repli Graph",
                   any("refusee" in m for lvl, m in ctx.msgs)
-                  and entries[0]["onedrive"] == "non provisionne", ctx.msgs)
+                  and entries[0]["onedrive"] == "refuse par SharePoint", ctx.msgs)
             check("detail brut du refus transmis au journal",
                   any(d and d.get("status") == 401 for d in ctx.details), ctx.details)
+            check("refus : un seul bilan, pas une ligne par compte",
+                  sum(1 for lvl, m in ctx.msgs if lvl == "error") == 1, ctx.msgs)
+
+            # Un refus n'attend pas : la demande n'a rien mis en file d'attente.
+            sharepoint.enqueue_personal_sites = enqueue_ko
+            entries = [{"upn": "v@c.fr", "id": "V", "provision_onedrive": True,
+                        "shortcut_folders": ["Commun"], "errors": []}]
+            t0 = _time.monotonic()
+            await provisioning.provision_onedrives(Ctx(), Drives(), entries, 600)
+            check("refus : aucune attente malgre un gros budget",
+                  _time.monotonic() - t0 < 1, round(_time.monotonic() - t0, 2))
+            check("refus : la cause part dans le recapitulatif",
+                  any("refuse" in e for e in entries[0]["errors"]), entries[0]["errors"])
         finally:
             provisioning.ONEDRIVE_DELAY = saved_delay
             sharepoint.enqueue_personal_sites = saved_enqueue

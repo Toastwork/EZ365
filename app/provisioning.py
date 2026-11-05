@@ -486,6 +486,9 @@ async def provision_onedrives(
     if queued:
         ctx.info("onedrive", "Creation des OneDrive demandee a SharePoint.")
     else:
+        # Sans demande acceptee, aucun OneDrive ne se cree en arriere-plan :
+        # attendre des minutes n'y changerait rien, on ne fait qu'une passe.
+        wait_seconds = 0
         ctx.warn(
             "onedrive",
             f"Demande de creation des OneDrive refusee : {detail} Repli sur "
@@ -544,21 +547,39 @@ async def provision_onedrives(
         if now >= deadline:
             break
 
-    for upn, entry in pending.items():
-        entry["onedrive"] = "en cours de creation" if queued else "non provisionne"
+    if not pending:
+        return
+
+    why = (
+        "raccourcis non poses : OneDrive pas encore pret, relancer le "
+        "deploiement plus tard"
+        if queued else
+        "raccourcis non poses : SharePoint a refuse la creation des OneDrive "
+        f"({detail.strip() or 'voir le journal'})"
+    )
+    for entry in pending.values():
+        entry["onedrive"] = "en cours de creation" if queued else "refuse par SharePoint"
         if entry.get("shortcut_folders"):
-            entry["errors"].append(
-                "raccourcis non poses : OneDrive pas encore pret — relancer plus "
-                "tard en « utilisateur existant »"
-            )
+            entry["errors"].append(why)
+
+    noms = sorted(pending)
+    apercu = ", ".join(noms[:5]) + (f" (+{len(noms) - 5})" if len(noms) > 5 else "")
+    if queued:
         ctx.warn(
             "onedrive",
-            f"OneDrive de {upn} pas pret apres {wait_seconds} s : on passe a la "
-            "suite. " + (
-                "Sa creation est en cours cote SharePoint."
-                if queued else
-                "Il sera cree au plus tard a sa premiere connexion."
-            ),
+            f"{len(noms)} OneDrive pas prets apres {wait_seconds} s : leur creation "
+            "se poursuit cote SharePoint. Relancez le deploiement dans quelques "
+            f"minutes pour poser les raccourcis manquants. Comptes : {apercu}",
+            {"comptes": noms},
+        )
+    else:
+        ctx.error(
+            "onedrive",
+            f"Aucun OneDrive cree pour {len(noms)} compte(s) : SharePoint a refuse "
+            "la demande, attendre n'y changerait rien. Corrigez les permissions "
+            "(page « Certificat SharePoint », puis « Renouveler » pour ce client) "
+            f"et relancez. Comptes : {apercu}",
+            {"comptes": noms, "refus": detail},
         )
 
 
