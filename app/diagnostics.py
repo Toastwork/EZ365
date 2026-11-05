@@ -128,8 +128,23 @@ async def sharepoint_access(tenant_id: str) -> dict:
         graph_roles = token_claims(await oauth.get_app_token(tenant_id)).get("roles") or []
     except oauth.ConsentError:
         graph_roles = []
-    if REQUIRED_SHAREPOINT_ROLE in graph_roles:
+    # « Mal placee » ne vaut que si le jeton SharePoint est vide de tout role :
+    # un jeton qui en porte deja prouve que l'API SharePoint est bien declaree,
+    # et il manque alors simplement une permission.
+    if not roles and REQUIRED_SHAREPOINT_ROLE in graph_roles:
         return {"state": "misplaced", "message": MISPLACED_HINT, "roles": roles}
+    if roles:
+        return {
+            "state": "incomplete",
+            "message": (
+                f"Le jeton SharePoint porte {', '.join(roles)} mais pas "
+                f"{', '.join(missing)}. Ajoutez cette permission sous « SharePoint » "
+                "(et non Microsoft Graph) sur l'application Azure, accordez le "
+                "consentement administrateur, puis renouvelez pour ce client."
+            ),
+            "roles": roles,
+            "missing": missing,
+        }
     return {
         "state": "reconsent",
         "message": (
@@ -249,7 +264,7 @@ async def onedrive_diagnostic(tenant_id: str, upn: str) -> list[Step]:
             if missing:
                 step.ok = False
                 step.summary += " ; " + (
-                    MISPLACED_HINT if REQUIRED_SHAREPOINT_ROLE in graph_roles
+                    MISPLACED_HINT if not roles and REQUIRED_SHAREPOINT_ROLE in graph_roles
                     else f"MANQUANTES (API SharePoint) : {', '.join(missing)}"
                 )
         except (oauth.ConsentError, GraphError) as exc:

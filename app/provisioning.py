@@ -23,6 +23,7 @@ from . import db, passwords
 from .jobs import JobContext
 from .msgraph import sharepoint
 from .msgraph.client import GraphClient, GraphError
+from .msgraph import oauth
 from .msgraph.oauth import ConsentError
 from .vault import bitwarden
 
@@ -445,6 +446,32 @@ async def _process_user(
 # ---------------------------------------------------------------------------
 # Etape 3 : OneDrive
 # ---------------------------------------------------------------------------
+async def sharepoint_token_roles(graph: GraphClient) -> tuple[list[str], list[str]]:
+    """Roles du jeton SharePoint de ce tenant, et ceux qui manquent.
+
+    Un refus 403 ne dit pas si la permission est absente du jeton ou si
+    SharePoint la refuse malgre tout : lire le jeton tranche la question.
+    """
+    try:
+        hostname = await bounded(graph.sharepoint_hostname(), 20, "Hote SharePoint")
+        token = await bounded(
+            oauth.get_app_token(
+                graph.tenant_id,
+                scope=f"https://{sharepoint.admin_host_for(hostname)}/.default",
+                force_refresh=True,
+            ),
+            20,
+            "Jeton SharePoint",
+        )
+    except (StepTimeout, GraphError, ConsentError, httpx.HTTPError) as exc:
+        log.debug("Lecture des roles SharePoint impossible : %s", exc)
+        return [], []
+    from .diagnostics import token_claims
+
+    roles = token_claims(token).get("roles") or []
+    return roles, [r for r in oauth.SHAREPOINT_ROLES if r not in roles]
+
+
 async def provision_onedrives(
     ctx: JobContext,
     graph: GraphClient,
@@ -489,6 +516,23 @@ async def provision_onedrives(
         # Sans demande acceptee, aucun OneDrive ne se cree en arriere-plan :
         # attendre des minutes n'y changerait rien, on ne fait qu'une passe.
         wait_seconds = 0
+        roles, manquants = await sharepoint_token_roles(graph)
+        raw = {**raw, "roles_du_jeton": roles}
+        if roles and not manquants:
+            detail = (
+                "le jeton porte pourtant " + ", ".join(roles) + " : le refus ne "
+                "vient donc pas des permissions de l'application. Regardez du cote "
+                "des restrictions d'acces applicatif du centre d'administration "
+                "SharePoint de ce client. En attendant, les OneDrive peuvent etre "
+                "crees a la main (Request-SPOPersonalSite), puis ce deploiement "
+                "relance pour poser les raccourcis."
+            )
+        elif roles:
+            detail = (
+                "le jeton ne porte que " + ", ".join(roles) + " : il manque "
+                + ", ".join(manquants) + " (API SharePoint). Ajoutez la permission "
+                "sur l'application Azure, puis « Renouveler » pour ce client."
+            )
         ctx.warn(
             "onedrive",
             f"Demande de creation des OneDrive refusee : {detail} Repli sur "

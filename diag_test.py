@@ -287,6 +287,30 @@ async def misplaced():
 
 asyncio.run(misplaced())
 
+
+async def incomplete():
+    """Jeton SharePoint avec le controle total mais sans les profils."""
+    diagnostics._hostnames["t1"] = "acme.sharepoint.com"
+
+    async def tok(tenant_id, scope=oauth.GRAPH_SCOPE, force_refresh=False):
+        if ".sharepoint.com" in scope:
+            return fake_token({"roles": ["Sites.FullControl.All"]})
+        return fake_token({"roles": ["Sites.FullControl.All", "User.ReadWrite.All"]})
+    oauth.get_app_token = tok
+    state = await diagnostics.sharepoint_access("t1")
+    check("permission manquante, pas « mal placee »",
+          state["state"] == "incomplete" and state["missing"] == ["User.ReadWrite.All"], state)
+    check("message nomme ce qui manque",
+          "User.ReadWrite.All" in state["message"] and "Sites.FullControl.All" in state["message"],
+          state["message"])
+
+    steps = await diagnostics.onedrive_diagnostic("t1", "neo@acme.fr")
+    check("diagnostic : etape 5 nomme la permission manquante",
+          steps[4].ok is False and "MANQUANTES" in steps[4].summary, steps[4].summary)
+    oauth.get_app_token = fake_token_for
+
+asyncio.run(incomplete())
+
 print()
 print("ECHECS :", fails if fails else "aucun")
 raise SystemExit(1 if fails else 0)

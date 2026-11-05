@@ -63,6 +63,7 @@
         <td>
           {% if t.state == "ok" %}<span class="pill pill-ok">operationnel</span>
           {% elif t.state == "reconsent" %}<span class="pill pill-warn">consentement a renouveler</span>
+          {% elif t.state == "incomplete" %}<span class="pill pill-warn">permission SharePoint incomplete</span>
           {% elif t.state == "misplaced" %}<span class="pill pill-ko">permission sous Graph au lieu de SharePoint</span>
           {% elif t.state == "certificate" %}<span class="pill pill-ko">certificat non depose</span>
           {% else %}<span class="pill pill-ko">erreur</span>
@@ -70,7 +71,7 @@
           {% endif %}
         </td>
         <td class="right">
-          {% if t.state in ("reconsent", "misplaced") %}
+          {% if t.state in ("reconsent", "misplaced", "incomplete") %}
             <a class="btn btn-small btn-primary" href="/tenants/{{ t.id }}/reconsent">Renouveler</a>
           {% endif %}
         </td>

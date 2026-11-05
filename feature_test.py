@@ -548,9 +548,14 @@ async def timeout_tests():
                 return False, "HTTP 401", {"status": 401, "body": "Unsupported app only token."}
 
             class Drives:
+                tenant_id = "t1"
+
                 def __init__(self, ready_after=None):
                     self.calls = 0
                     self.ready_after = ready_after
+
+                async def sharepoint_hostname(self):
+                    return "acme.sharepoint.com"
 
                 async def user_drive(self, uid):
                     self.calls += 1
@@ -590,6 +595,8 @@ async def timeout_tests():
             ctx = Ctx()
             entries = [{"upn": "w@c.fr", "id": "W", "provision_onedrive": True, "errors": []}]
             await provisioning.provision_onedrives(ctx, Drives(), entries, 0)
+            check("refus : roles du jeton journalises",
+                  any(d and "roles_du_jeton" in d for d in ctx.details), ctx.details)
             check("refus SharePoint signale, repli Graph",
                   any("refusee" in m for lvl, m in ctx.msgs)
                   and entries[0]["onedrive"] == "refuse par SharePoint", ctx.msgs)
