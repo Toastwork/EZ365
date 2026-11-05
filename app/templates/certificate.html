@@ -69,6 +69,11 @@
           {% else %}<span class="pill pill-ko">erreur</span>
             <div class="muted small">{{ t.message }}</div>
           {% endif %}
+          {% if t.state != "error" %}
+            <div class="muted small">
+              Jeton SharePoint : {{ t.roles | join(', ') if t.roles else 'aucune permission' }}
+            </div>
+          {% endif %}
         </td>
         <td class="right">
           {% if t.state in ("reconsent", "misplaced", "incomplete") %}

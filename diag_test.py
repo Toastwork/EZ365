@@ -218,6 +218,8 @@ with TestClient(app) as client:
     check("pas de bandeau quand tout va bien", "Renouveler le consentement" not in page)
     page = client.get("/settings/certificate").text
     check("page certificat : client operationnel", "operationnel" in page)
+    check("page certificat : roles du jeton affiches",
+          "Jeton SharePoint : Sites.FullControl.All, User.ReadWrite.All" in page, page[:0])
     oauth.get_app_token = fake_token_for
 
     # le retour de consentement oublie les jetons en cache
