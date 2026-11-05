@@ -25,6 +25,9 @@ log = logging.getLogger(__name__)
 LOGIN_HOST = "https://login.microsoftonline.com"
 GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 UNGRANTED_TOKEN_TTL = 60  # secondes
+# Roles attendus sur un jeton SharePoint. Sites.FullControl.All ouvre les
+# sites, User.ReadWrite.All les profils (exige par la creation des OneDrive).
+SHAREPOINT_ROLES = ("Sites.FullControl.All", "User.ReadWrite.All")
 
 _token_cache: dict[tuple[str, str], tuple[str, float]] = {}
 _cache_lock = threading.Lock()
@@ -140,14 +143,24 @@ async def get_app_token(
 
     payload = resp.json()
     token = payload["access_token"]
-    expires_at = time.time() + int(payload.get("expires_in", 3600))
-    if not _token_roles(token):
-        # Juste apres un consentement, Entra peut encore delivrer un jeton sans
-        # permission pendant quelques minutes : ne pas le garder une heure.
-        expires_at = min(expires_at, time.time() + UNGRANTED_TOKEN_TTL)
+    expires_at = time.time() + cache_ttl(token, scope, int(payload.get("expires_in", 3600)))
     with _cache_lock:
         _token_cache[key] = (token, expires_at)
     return token
+
+
+def cache_ttl(token: str, scope: str, expires_in: int) -> int:
+    """Duree de conservation d'un jeton.
+
+    Juste apres un consentement, Entra peut encore delivrer un jeton aux
+    permissions incompletes pendant quelques minutes : le garder une heure
+    ferait croire que l'ajout d'une permission est reste sans effet.
+    """
+    roles = _token_roles(token)
+    incomplet = not roles or (
+        is_sharepoint_scope(scope) and any(r not in roles for r in SHAREPOINT_ROLES)
+    )
+    return min(expires_in, UNGRANTED_TOKEN_TTL) if incomplet else expires_in
 
 
 def _token_roles(token: str) -> list:

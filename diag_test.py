@@ -235,6 +235,22 @@ from app.msgraph.oauth import _token_roles
 check("roles lus par oauth", _token_roles(fake_token({"roles": ["A"]})) == ["A"])
 check("jeton sans role detecte", _token_roles(fake_token({})) == [] and _token_roles("x") == [])
 
+# jeton SharePoint incomplet : garde quelques secondes, pas une heure ---------------
+SP_SCOPE = "https://acme-admin.sharepoint.com/.default"
+
+
+def ttl(roles, scope=SP_SCOPE):
+    return oauth.cache_ttl(fake_token({"roles": roles}), scope, 3600)
+
+
+check("jeton SharePoint complet : garde en cache", ttl(list(oauth.SHAREPOINT_ROLES)) == 3600)
+check("jeton SharePoint sans les profils : cache court",
+      ttl(["Sites.FullControl.All"]) == oauth.UNGRANTED_TOKEN_TTL, ttl(["Sites.FullControl.All"]))
+check("jeton sans aucun role : cache court", ttl([]) == oauth.UNGRANTED_TOKEN_TTL)
+check("jeton Graph : roles SharePoint non exiges",
+      ttl(["User.ReadWrite.All"], oauth.GRAPH_SCOPE) == 3600)
+
+
 # roles SharePoint : les deux sont exiges -------------------------------------------
 check("profils exiges en plus du controle total",
       diagnostics.missing_sharepoint_roles(["Sites.FullControl.All"]) == ["User.ReadWrite.All"])

@@ -58,7 +58,7 @@ REQUIRED_SHAREPOINT_ROLE = "Sites.FullControl.All"
 # permission Sites.FullControl.All ne suffit pas, SharePoint repond alors 403
 # « cette application ne dispose pas des autorisations necessaires pour acceder
 # a des informations de profil ».
-REQUIRED_SHAREPOINT_ROLES = (REQUIRED_SHAREPOINT_ROLE, "User.ReadWrite.All")
+REQUIRED_SHAREPOINT_ROLES = oauth.SHAREPOINT_ROLES
 REQUIRED_GRAPH_ROLES = (
     "User.ReadWrite.All", "Organization.Read.All", "Domain.Read.All",
     "Sites.ReadWrite.All",
